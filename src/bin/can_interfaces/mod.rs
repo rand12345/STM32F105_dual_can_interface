@@ -6,9 +6,8 @@ use embassy_stm32::peripherals::*;
 use embassy_stm32::usart::Uart;
 use embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex;
 use embassy_sync::channel::Channel;
-use embassy_sync::mutex::Mutex;
 use embassy_sync::signal::Signal;
-use lazy_static::{__Deref, lazy_static};
+use lazy_static::lazy_static;
 use nb::Error::*;
 
 // pub type InverterDataMutex = embassy_sync::mutex::Mutex<CriticalSectionRawMutex, SolaxBms>;
@@ -16,7 +15,7 @@ pub type InverterChannelRx = Channel<CriticalSectionRawMutex, Frame, 2>;
 pub type InverterChannelTx = Channel<CriticalSectionRawMutex, Frame, 20>;
 pub type BmsChannelRx = Channel<CriticalSectionRawMutex, Frame, 10>;
 pub type BmsChannelTx = Channel<CriticalSectionRawMutex, Frame, 2>;
-pub type Status = Mutex<CriticalSectionRawMutex, bool>;
+pub type Status = Signal<CriticalSectionRawMutex, bool>;
 pub type State = Signal<CriticalSectionRawMutex, CommsState>;
 
 lazy_static! {
@@ -26,7 +25,7 @@ lazy_static! {
     pub static ref INVERTER_CHANNEL_TX: InverterChannelTx = Channel::new();
     pub static ref BMS_CHANNEL_RX: BmsChannelRx = Channel::new();
     pub static ref BMS_CHANNEL_TX: BmsChannelTx = Channel::new();
-    pub static ref CAN_READY: Status = Mutex::new(false);
+    pub static ref CAN_READY: Status = Signal::new();
     pub static ref STATE: State = Signal::new();
 }
 #[allow(dead_code)]
@@ -74,7 +73,7 @@ pub async fn bms_rx_processor() {
     let mut bms_validated = Bms::new();
     let mut data = Data::default();
     let mut _update_inverter = false;
-    info!("Starting BMS Rx Processor");
+    warn!("Starting BMS Rx Processor");
 
     loop {
         let frame = rx.recv().await;
@@ -131,14 +130,9 @@ pub async fn bms_rx_processor() {
 
 #[embassy_executor::task]
 pub async fn inverter_task(mut can: Can<'static, CAN2>) {
-    loop {
-        if !CAN_READY.lock().await.deref() {
-            yield_now().await
-        } else {
-            break;
-        }
-    }
-    warn!("Can config lock clear");
+    // Wait for Can1 to initalise
+    CAN_READY.wait().await;
+
     can.modify_config()
         .set_bit_timing(BITTIMINGS) // http://www.bittiming.can-wiki.info/
         .set_loopback(false) // Receive own frames
@@ -184,10 +178,9 @@ pub async fn bms_task(mut can: Can<'static, CAN1>) {
         .enable();
     warn!("Starting BMS Can1");
 
-    {
-        let mut status = CAN_READY.lock().await;
-        *status = true;
-    }
+    // Signal to other can bus that filters have been applied
+    CAN_READY.signal(true);
+
     let rx = BMS_CHANNEL_RX.sender();
     let tx = BMS_CHANNEL_TX.receiver();
     loop {
