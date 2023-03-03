@@ -11,7 +11,9 @@ use embassy_stm32::can::Can;
 use embassy_stm32::time::mhz;
 use embedded_alloc::Heap;
 use {defmt_rtt as _, panic_probe as _};
+mod async_tasks;
 mod can_interfaces;
+
 #[global_allocator]
 static HEAP: Heap = Heap::empty();
 
