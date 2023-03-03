@@ -14,8 +14,10 @@ name = "integration"
 harness = false
 
 [features]
-default = ["defmt", "kangoo_battery"]
+default = ["defmt", "kangoo_battery", "solax", "kangoo"]
 defmt = []
+kangoo = ["dep:kangoo_battery"]
+solax = ["dep:solax_can_bus"]
 kangoo_battery = ["dep:kangoo_battery"]
 
 [dependencies]
@@ -42,6 +44,7 @@ embassy-futures = { version = "0.1.0", features = ["defmt"]}
 embedded-io = "0.4.0"
 lazy_static = {version = "1.4.0", features = ["spin_no_std"]}
 kangoo_battery = {git = "https://github.com/rand12345/kangoo_battery.git", branch = "split_readings", optional = true, features = ["defmt"]}
+solax_can_bus = {git = "https://github.com/rand12345/solax_can_bus.git", branch = "return-iterator", optional = true, features = ["defmt"]}
 
 
 

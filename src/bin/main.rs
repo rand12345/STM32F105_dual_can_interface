@@ -4,7 +4,6 @@
 #![feature(alloc_error_handler)]
 #![feature(generators)]
 
-use can_interfaces::*;
 use defmt::debug;
 use embassy_executor::Spawner;
 use embassy_stm32::can::Can;
@@ -56,15 +55,14 @@ async fn main(spawner: Spawner) -> ! {
     let can1 = Can::new(p.CAN1, p.PA11, p.PA12);
     let can2 = Can::new(p.CAN2, p.PB5, p.PB6);
 
-    defmt::unwrap!(spawner.spawn(activity_led(p.PC12)));
-    defmt::unwrap!(spawner.spawn(uart_task(uart)));
+    defmt::unwrap!(spawner.spawn(crate::async_tasks::activity_led(p.PC12)));
+    defmt::unwrap!(spawner.spawn(crate::async_tasks::uart_task(uart)));
+    defmt::unwrap!(spawner.spawn(crate::async_tasks::contactor_task(p.PA15, p.TIM2)));
 
-    defmt::unwrap!(spawner.spawn(bms_rx_processor()));
-    defmt::unwrap!(spawner.spawn(inverter_rx_processor()));
+    defmt::unwrap!(spawner.spawn(crate::async_tasks::bms_rx_processor()));
+    defmt::unwrap!(spawner.spawn(crate::async_tasks::inverter_rx_processor()));
 
     // always start can 1 first
-    defmt::unwrap!(spawner.spawn(bms_task(can1)));
-    defmt::unwrap!(spawner.spawn(inverter_task(can2)));
-
-    defmt::unwrap!(spawner.spawn(contactor_task(p.PA15, p.TIM2, 15000)));
+    defmt::unwrap!(spawner.spawn(crate::can_interfaces::bms_task(can1)));
+    defmt::unwrap!(spawner.spawn(crate::can_interfaces::inverter_task(can2)));
 }

@@ -3,29 +3,27 @@ use defmt::{info, warn, Debug2Format};
 use embassy_futures::yield_now;
 use embassy_stm32::can::{bxcan::*, Can};
 use embassy_stm32::peripherals::*;
-use embassy_stm32::usart::Uart;
 use embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex;
 use embassy_sync::channel::Channel;
 use embassy_sync::signal::Signal;
 use lazy_static::lazy_static;
 use nb::Error::*;
 
-// pub type InverterDataMutex = embassy_sync::mutex::Mutex<CriticalSectionRawMutex, SolaxBms>;
 pub type InverterChannelRx = Channel<CriticalSectionRawMutex, Frame, 2>;
 pub type InverterChannelTx = Channel<CriticalSectionRawMutex, Frame, 20>;
 pub type BmsChannelRx = Channel<CriticalSectionRawMutex, Frame, 10>;
 pub type BmsChannelTx = Channel<CriticalSectionRawMutex, Frame, 2>;
+
 pub type Status = Signal<CriticalSectionRawMutex, bool>;
 pub type State = Signal<CriticalSectionRawMutex, CommsState>;
 
 lazy_static! {
-    // pub static ref INVERTER_DATA: InverterDataMutex =
-    // embassy_sync::mutex::Mutex::new(SolaxBms::default());
     pub static ref INVERTER_CHANNEL_RX: InverterChannelRx = Channel::new();
     pub static ref INVERTER_CHANNEL_TX: InverterChannelTx = Channel::new();
     pub static ref BMS_CHANNEL_RX: BmsChannelRx = Channel::new();
     pub static ref BMS_CHANNEL_TX: BmsChannelTx = Channel::new();
     pub static ref CAN_READY: Status = Signal::new();
+    pub static ref CONTACTOR_STATE: Status = Signal::new();
     pub static ref STATE: State = Signal::new();
 }
 #[allow(dead_code)]
@@ -202,57 +200,5 @@ pub async fn bms_task(mut can: Can<'static, CAN1>) {
                 Err(Other(e)) => defmt::error!("BMS Tx error {:?}", Debug2Format(&e)),
             }
         }
-    }
-}
-
-#[embassy_executor::task]
-pub async fn contactor_task(pin: PA15, timer: TIM2, duty: u16) {
-    use embassy_stm32::pwm::simple_pwm::{PwmPin, SimplePwm};
-    use embassy_stm32::pwm::Channel as TimerChannel;
-    use embassy_stm32::time::khz;
-    use embassy_time::{Duration, Timer};
-    let ch1 = PwmPin::new_ch1(pin);
-    let mut pwm = SimplePwm::new(timer, Some(ch1), None, None, None, khz(1));
-    let max = pwm.get_max_duty() - 1;
-    pwm.enable(TimerChannel::Ch1);
-
-    info!("PWM initialized");
-    info!("PWM max duty {}", max);
-    if max >= duty {
-        pwm.set_duty(TimerChannel::Ch1, duty);
-        info!("PWM duty: {}, max duty is {}", duty, max);
-    } else {
-        panic!("Duty set to {} which is greater than maxduty {}", duty, max)
-    }
-    loop {
-        // listen for changes to PWM command
-        Timer::after(Duration::from_millis(10)).await
-    }
-}
-
-#[embassy_executor::task]
-pub async fn activity_led(led: PC12) {
-    use embassy_stm32::gpio::{Level, Output, Speed};
-    use embassy_time::{Duration, Timer};
-    let mut led = Output::new(led, Level::Low, Speed::Medium);
-    info!("Spawn activity LED");
-    loop {
-        // change on static state
-        led.set_high();
-        Timer::after(Duration::from_millis(100)).await;
-        led.set_low();
-        Timer::after(Duration::from_millis(100)).await;
-    }
-}
-
-#[embassy_executor::task]
-pub async fn uart_task(uart: Uart<'static, USART3, DMA1_CH2, DMA1_CH3>) {
-    use embassy_time::{Duration, Timer};
-    let message = "Test UART\n";
-    let mut uart = uart;
-    loop {
-        STATE.wait().await;
-        uart.write(message.as_bytes()).await.unwrap();
-        Timer::after(Duration::from_millis(1000)).await
     }
 }
