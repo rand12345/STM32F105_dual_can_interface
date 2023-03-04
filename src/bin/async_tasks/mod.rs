@@ -69,11 +69,21 @@ impl MqttFormat {
             valid: false,
         }
     }
-    fn device_update_msg(&self) -> Result<heapless::String<512>, serde_json::Error> {
-        let json_msg = serde_json::json!(&self);
-        let json_string = serde_json::to_string(&json_msg)?;
-        let string: heapless::String<512> = json_string.chars().take(512).collect();
-        Ok(string)
+    fn device_update_msg(&self) -> Option<heapless::String<512>> {
+        let mut string: heapless::String<512> = heapless::String::new();
+        // unsafe block due to bytes_mut
+        unsafe {
+            match serde_json_core::to_slice(&self, string.as_bytes_mut()) {
+                Ok(len) => {
+                    info!("Serialiased {} bytes", len);
+                    Some(string)
+                }
+                Err(e) => {
+                    error!("MQTT serialiasation failed: {}", Debug2Format(&e));
+                    None
+                }
+            }
+        }
     }
 }
 
@@ -107,12 +117,6 @@ pub async fn inverter_rx_processor() {
     let mut timer = Instant::now();
     loop {
         if timer.elapsed().as_secs() > 5 {
-            // unsafe {
-            //     let free = esp_idf_sys::uxTaskGetStackHighWaterMark(
-            //         esp_idf_sys::xTaskGetCurrentTaskHandle(),
-            //     );
-            //     warn!("Free stack = {free}")
-            // };
             timer = Instant::now()
         }
         // This is a server
@@ -335,24 +339,14 @@ pub async fn activity_led(led: PC12) {
 
 #[embassy_executor::task]
 pub async fn uart_task(uart: Uart<'static, USART3, DMA1_CH2, DMA1_CH3>) {
-    use embassy_time::{Duration, Timer};
-
     let mut uart = uart;
+    // turn this into a logger or interface?
     loop {
         let state = STATE.wait().await;
-        let message = match state {
-            CommsState::UpdateMqtt => {
-                let mqtt_data = { MQTTFMT.lock().await };
-                if let Ok(string) = mqtt_data.device_update_msg() {
-                    string
-                } else {
-                    warn!("MQTT serialise failed");
-                    continue;
-                }
+        if let CommsState::UpdateMqtt = state {
+            if let Some(message) = MQTTFMT.lock().await.device_update_msg() {
+                uart.write(message.as_bytes()).await.unwrap();
             }
-            _ => continue,
-        };
-        uart.write(message.as_bytes()).await.unwrap();
-        Timer::after(Duration::from_millis(1000)).await
+        }
     }
 }
