@@ -1,4 +1,3 @@
-use crate::async_tasks::CommsState;
 use crate::statics::*;
 use crate::BITTIMINGS;
 use defmt::{info, warn, Debug2Format};
