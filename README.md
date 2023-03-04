@@ -4,6 +4,7 @@
 * [X] Async USART
 * [X] Single PWM output
 * [X] Single GPIO output
+* [X] JSON MQTT data output on UART for nodeMCU
 
 Hardware details can be found here: https://github.com/EliasKotlyar/Canfilter
 
