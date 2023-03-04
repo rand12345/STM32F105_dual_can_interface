@@ -119,7 +119,6 @@ pub async fn inverter_rx_processor() {
         if timer.elapsed().as_secs() > 5 {
             timer = Instant::now()
         }
-        // This is a server
         let frame = recv.recv().await;
 
         let response = {
