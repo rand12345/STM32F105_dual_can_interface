@@ -1,47 +1,16 @@
+use crate::async_tasks::CommsState;
+use crate::statics::*;
 use crate::BITTIMINGS;
 use defmt::{info, warn, Debug2Format};
 use embassy_futures::yield_now;
 use embassy_stm32::can::{bxcan::*, Can};
 use embassy_stm32::peripherals::*;
-use embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex;
-use embassy_sync::channel::Channel;
-use embassy_sync::signal::Signal;
-use lazy_static::lazy_static;
+
 use nb::Error::*;
 
-pub type InverterChannelRx = Channel<CriticalSectionRawMutex, Frame, 2>;
-pub type InverterChannelTx = Channel<CriticalSectionRawMutex, Frame, 20>;
-pub type BmsChannelRx = Channel<CriticalSectionRawMutex, Frame, 10>;
-pub type BmsChannelTx = Channel<CriticalSectionRawMutex, Frame, 2>;
-
-pub type Status = Signal<CriticalSectionRawMutex, bool>;
-pub type State = Signal<CriticalSectionRawMutex, CommsState>;
-
-lazy_static! {
-    pub static ref INVERTER_CHANNEL_RX: InverterChannelRx = Channel::new();
-    pub static ref INVERTER_CHANNEL_TX: InverterChannelTx = Channel::new();
-    pub static ref BMS_CHANNEL_RX: BmsChannelRx = Channel::new();
-    pub static ref BMS_CHANNEL_TX: BmsChannelTx = Channel::new();
-    pub static ref CAN_READY: Status = Signal::new();
-    pub static ref CONTACTOR_STATE: Status = Signal::new();
-    pub static ref STATE: State = Signal::new();
-}
-#[allow(dead_code)]
-#[derive(Debug, Copy, Clone)]
-pub enum CommsState {
-    CAN1RX,
-    CAN1TX,
-    CAN2RX,
-    CAN2TX,
-    Update,
-}
 #[embassy_executor::task]
 pub async fn inverter_rx_processor() {
-    //mut contactor: ContactorType<'_>
-    // let timeout = std::time::Duration::from_secs(30);
     warn!("Starting Inverter Processor");
-    // let mut communications_valid = Safe::No;
-    // let mut contactor_state = ContactorState::default();
 
     let recv = INVERTER_CHANNEL_RX.receiver();
     let trans = INVERTER_CHANNEL_TX.sender();
@@ -115,12 +84,15 @@ pub async fn bms_rx_processor() {
                 }
             };
         }
+
+        // Some success, pet the WDT
+        WDT.signal(true);
+
         if _update_inverter {
             // push_bms_to_inverter(bms_validated).await;
             info!("Pushed values to Inverter data store");
             // push_all_to_mqtt(bms_validated).await;
             info!("Push values to MQTT data store");
-            STATE.signal(CommsState::Update);
             _update_inverter = false;
         }
     }

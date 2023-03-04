@@ -9,9 +9,13 @@ use embassy_executor::Spawner;
 use embassy_stm32::can::Can;
 use embassy_stm32::time::mhz;
 use embedded_alloc::Heap;
+
 use {defmt_rtt as _, panic_probe as _};
 mod async_tasks;
 mod can_interfaces;
+mod statics;
+mod types;
+mod wdt;
 
 #[global_allocator]
 static HEAP: Heap = Heap::empty();
@@ -65,4 +69,5 @@ async fn main(spawner: Spawner) -> ! {
     // always start can 1 first
     defmt::unwrap!(spawner.spawn(crate::can_interfaces::bms_task(can1)));
     defmt::unwrap!(spawner.spawn(crate::can_interfaces::inverter_task(can2)));
+    defmt::unwrap!(spawner.spawn(crate::wdt::init(p.IWDG, 10000000))); // 10 seconds WDT
 }

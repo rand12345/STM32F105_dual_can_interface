@@ -1,3 +1,4 @@
+use crate::statics::*;
 use defmt::error;
 use defmt::info;
 use defmt::warn;
@@ -8,11 +9,8 @@ use embassy_stm32::usart::Uart;
 use embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex;
 use embassy_time::Instant;
 use lazy_static::lazy_static;
-
-// use serde::Serialize;
-// use serde_big_array::BigArray;
-use crate::can_interfaces::CONTACTOR_STATE;
-use crate::can_interfaces::STATE;
+use serde::Serialize;
+use serde_big_array::BigArray;
 use solax_can_bus::SolaxBms;
 
 pub type InverterDataMutex = embassy_sync::mutex::Mutex<CriticalSectionRawMutex, SolaxBms>;
@@ -24,7 +22,17 @@ lazy_static! {
         embassy_sync::mutex::Mutex::new(SolaxBms::default());
 }
 
-#[derive(Clone, Copy)]
+#[allow(dead_code)]
+#[derive(Debug, Copy, Clone)]
+pub enum CommsState {
+    CAN1RX,
+    CAN1TX,
+    CAN2RX,
+    CAN2TX,
+    UpdateMqtt,
+}
+
+#[derive(Clone, Copy, Serialize)]
 pub struct MqttFormat {
     soc: f32,
     battery_voltage: f32,
@@ -32,9 +40,9 @@ pub struct MqttFormat {
     lowest_cell_voltage: f32,
     highest_cell_temperature: f32,
     lowest_cell_temperature: f32,
-    // #[serde(with = "BigArray")]
+    #[serde(with = "BigArray")]
     cells_millivolts: [u16; 96],
-    // #[serde(with = "BigArray")]
+    #[serde(with = "BigArray")]
     cell_balance: [bool; 96],
     current_amps: f32,
     kwh_remaining: f32,
@@ -61,6 +69,12 @@ impl MqttFormat {
             valid: false,
         }
     }
+    fn device_update_msg(&self) -> Result<heapless::String<512>, serde_json::Error> {
+        let json_msg = serde_json::json!(&self);
+        let json_string = serde_json::to_string(&json_msg)?;
+        let string: heapless::String<512> = json_string.chars().take(512).collect();
+        Ok(string)
+    }
 }
 
 enum Safe {
@@ -84,14 +98,12 @@ impl From<bool> for Safe {
 pub async fn inverter_rx_processor() {
     use embassy_time::{Duration, Instant};
 
-    use crate::can_interfaces::INVERTER_CHANNEL_RX;
-
     let timeout = Duration::from_secs(30);
     warn!("Starting Inverter Processor");
     let mut communications_valid = Safe::No;
 
     let recv = INVERTER_CHANNEL_RX.receiver();
-    let trans = crate::can_interfaces::INVERTER_CHANNEL_TX.sender();
+    let trans = INVERTER_CHANNEL_TX.sender();
     let mut timer = Instant::now();
     loop {
         if timer.elapsed().as_secs() > 5 {
@@ -119,6 +131,8 @@ pub async fn inverter_rx_processor() {
                 for frame in frames.iter() {
                     trans.send(frame.clone()).await;
                 }
+                // Send signal to push json data to UART
+                STATE.signal(CommsState::UpdateMqtt);
             }
 
             Err(e) => match e {
@@ -148,8 +162,6 @@ pub async fn inverter_rx_processor() {
 pub async fn bms_rx_processor() {
     use embassy_stm32::can::bxcan::Id;
     use embassy_stm32::can::bxcan::Id::Standard;
-
-    use crate::can_interfaces::{BMS_CHANNEL_RX, BMS_CHANNEL_TX};
 
     let rx = BMS_CHANNEL_RX.receiver();
     let tx = BMS_CHANNEL_TX.sender();
@@ -325,10 +337,21 @@ pub async fn activity_led(led: PC12) {
 pub async fn uart_task(uart: Uart<'static, USART3, DMA1_CH2, DMA1_CH3>) {
     use embassy_time::{Duration, Timer};
 
-    let message = "Test UART\n";
     let mut uart = uart;
     loop {
-        STATE.wait().await;
+        let state = STATE.wait().await;
+        let message = match state {
+            CommsState::UpdateMqtt => {
+                let mqtt_data = { MQTTFMT.lock().await };
+                if let Ok(string) = mqtt_data.device_update_msg() {
+                    string
+                } else {
+                    warn!("MQTT serialise failed");
+                    continue;
+                }
+            }
+            _ => continue,
+        };
         uart.write(message.as_bytes()).await.unwrap();
         Timer::after(Duration::from_millis(1000)).await
     }

@@ -45,6 +45,9 @@ embedded-io = "0.4.0"
 lazy_static = {version = "1.4.0", features = ["spin_no_std"]}
 kangoo_battery = {git = "https://github.com/rand12345/kangoo_battery.git", branch = "split_readings", optional = true, features = ["defmt"]}
 solax_can_bus = {git = "https://github.com/rand12345/solax_can_bus.git", branch = "return-iterator", optional = true, features = ["defmt"]}
+serde = {version = "1", default-features = false, features = ["derive"] }
+serde-big-array = "0.5.0"
+serde_json = {version = "1.0.93", default-features = false, features= ["alloc"]}
 
 
 
