@@ -3,6 +3,7 @@
 #![feature(type_alias_impl_trait)]
 #![feature(alloc_error_handler)]
 #![feature(generators)]
+#![feature(async_closure)]
 
 use defmt::debug;
 use embassy_executor::Spawner;
@@ -20,7 +21,10 @@ mod wdt;
 #[global_allocator]
 static HEAP: Heap = Heap::empty();
 
+// pub const BITTIMINGS: u32 = 0x001c0000; // 500kps @ 8MHz // config.rcc.sys_ck = Some(mhz(64)); config.rcc.pclk1 = Some(mhz(24)); << experimental >>
 pub const BITTIMINGS: u32 = 0x00050007; // 500kps @ 32Mhz // config.rcc.sys_ck = Some(mhz(64)); config.rcc.pclk1 = Some(mhz(24)); << experimental >>
+                                        // pub const BITTIMINGS: u32 = 0x00050005; // 500kps @ 24Mhz
+                                        // pub const BITTIMINGS: u32 = 0x00050008; // 500kps @ 36Mhz
 
 #[embassy_executor::main]
 async fn main(spawner: Spawner) -> ! {
@@ -33,6 +37,12 @@ async fn main(spawner: Spawner) -> ! {
     let mut config = embassy_stm32::Config::default();
     config.rcc.sys_ck = Some(mhz(64));
     config.rcc.pclk1 = Some(mhz(24));
+    // config.rcc.sys_ck = Some(Hertz(36_000_000));
+
+    // config.rcc.hse = Some(mhz(8));
+    // config.rcc.sys_ck = Some(mhz(48));
+    // config.rcc.pclk1 = Some(mhz(24));
+
     let p = embassy_stm32::init(config);
     debug!("Gateway test");
     unsafe {
@@ -69,5 +79,7 @@ async fn main(spawner: Spawner) -> ! {
     // always start can 1 first
     defmt::unwrap!(spawner.spawn(crate::can_interfaces::bms_task(can1)));
     defmt::unwrap!(spawner.spawn(crate::can_interfaces::inverter_task(can2)));
-    defmt::unwrap!(spawner.spawn(crate::wdt::init(p.IWDG, 10000000))); // 10 seconds WDT
+    // defmt::unwrap!(spawner.spawn(crate::wdt::init(p.IWDG, 10000000))); // 10 seconds WDT OFF WHILST TESTING
+    defmt::unwrap!(spawner.spawn(crate::async_tasks::bms_tx_periodic()));
+    // defmt::unwrap!(spawner.spawn(crate::async_tasks::one_sec_periodic())); // e_t::Timer test
 }

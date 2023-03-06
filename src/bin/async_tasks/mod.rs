@@ -7,10 +7,9 @@ use embassy_stm32::can::bxcan::Frame;
 use embassy_stm32::peripherals::*;
 use embassy_stm32::usart::Uart;
 use embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex;
-use embassy_time::Instant;
+use embassy_time::Duration;
 use lazy_static::lazy_static;
 use serde::Serialize;
-use serde_big_array::BigArray;
 use solax_can_bus::SolaxBms;
 
 pub type InverterDataMutex = embassy_sync::mutex::Mutex<CriticalSectionRawMutex, SolaxBms>;
@@ -32,61 +31,6 @@ pub enum CommsState {
     UpdateMqtt,
 }
 
-#[derive(Clone, Copy, Serialize)]
-pub struct MqttFormat {
-    soc: f32,
-    battery_voltage: f32,
-    highest_cell_voltage: f32,
-    lowest_cell_voltage: f32,
-    highest_cell_temperature: f32,
-    lowest_cell_temperature: f32,
-    #[serde(with = "BigArray")]
-    cells_millivolts: [u16; 96],
-    #[serde(with = "BigArray")]
-    cell_balance: [bool; 96],
-    current_amps: f32,
-    kwh_remaining: f32,
-    charge_rate: f32,
-    discharge_rate: f32,
-    valid: bool,
-}
-
-impl MqttFormat {
-    fn new() -> Self {
-        Self {
-            soc: 0.0,
-            battery_voltage: 0.0,
-            highest_cell_voltage: 0.0,
-            lowest_cell_voltage: 0.0,
-            highest_cell_temperature: 0.0,
-            lowest_cell_temperature: 0.0,
-            cells_millivolts: [0; 96],
-            cell_balance: [false; 96],
-            current_amps: 0.0,
-            kwh_remaining: 0.0,
-            charge_rate: 0.0,
-            discharge_rate: 0.0,
-            valid: false,
-        }
-    }
-    fn device_update_msg(&self) -> Option<heapless::String<512>> {
-        let mut string: heapless::String<512> = heapless::String::new();
-        // unsafe block due to bytes_mut
-        unsafe {
-            match serde_json_core::to_slice(&self, string.as_bytes_mut()) {
-                Ok(len) => {
-                    info!("Serialiased {} bytes", len);
-                    Some(string)
-                }
-                Err(e) => {
-                    error!("MQTT serialiasation failed: {}", Debug2Format(&e));
-                    None
-                }
-            }
-        }
-    }
-}
-
 enum Safe {
     Yes,
     No,
@@ -106,29 +50,27 @@ impl From<bool> for Safe {
 #[cfg(feature = "solax")]
 #[embassy_executor::task]
 pub async fn inverter_rx_processor() {
-    use embassy_time::{Duration, Instant};
+    // use embassy_time::Duration;
 
-    let timeout = Duration::from_secs(30);
     warn!("Starting Inverter Processor");
     let mut communications_valid = Safe::No;
 
     let recv = INVERTER_CHANNEL_RX.receiver();
     let trans = INVERTER_CHANNEL_TX.sender();
-    let mut timer = Instant::now();
     loop {
-        if timer.elapsed().as_secs() > 5 {
-            timer = Instant::now()
-        }
         let frame = recv.recv().await;
 
+        /*
+           Need to implement a global Intstand for monitoring the age of the last can update
+           Check elapsed here
+        */
         let response = {
             let mut solax = INVERTER_DATA.lock().await;
-            let r = solax.parser(frame, timeout);
+            let r = solax.parser(frame);
             communications_valid = solax.is_valid().into(); // spweing out unwanted log! messages
             r
         };
 
-        // arkward but allows RWLock drop on solax_data
         match response {
             Ok(frames) => {
                 for frame in frames.iter() {
@@ -147,6 +89,7 @@ pub async fn inverter_rx_processor() {
                 }
                 solax_can_bus::SolaxError::TimeStamp(time) => info!("Inverter time: {}", time),
                 solax_can_bus::SolaxError::InvalidTimeData => warn!("InvalidTimeData"),
+                _ => (),
             },
         }
 
@@ -156,6 +99,46 @@ pub async fn inverter_rx_processor() {
             Safe::Yes => CONTACTOR_STATE.signal(true),
             Safe::No => CONTACTOR_STATE.signal(false),
         };
+    }
+}
+
+#[cfg(feature = "kangoo")]
+#[embassy_executor::task]
+pub async fn bms_tx_periodic() {
+    use embassy_futures::select::{select3, Either3};
+    use embassy_time::Timer;
+    use kangoo_battery::*;
+    let tx = BMS_CHANNEL_TX.sender();
+    let timer_ms = |ms| Timer::after(Duration::from_millis(ms));
+    let sender = |frame| {
+        if let Err(e) = tx.try_send(frame) {
+            error!("{}", Debug2Format(&e))
+        };
+    };
+    timer_ms(3000).await;
+    warn!("Starting BMS TX periodic");
+    loop {
+        let frame: Frame = match select3(timer_ms(100), timer_ms(5050), timer_ms(12345)).await {
+            Either3::First(_) => request_init().unwrap(),
+            Either3::Second(_) => request_tx_frame(RequestMode::CellBank1).unwrap(),
+            Either3::Third(_) => request_tx_frame(RequestMode::Balance).unwrap(),
+        };
+        sender(frame);
+    }
+}
+
+#[cfg(feature = "kangoo")]
+#[embassy_executor::task]
+pub async fn one_sec_periodic() {
+    use embassy_time::Duration;
+    // use embassy_time::Ticker;
+    use embassy_time::Timer;
+
+    warn!("Starting 1s timer periodic");
+    loop {
+        // Ticker::every(Duration::from_secs(1)).next().await;
+        Timer::after(Duration::from_secs(1)).await;
+        info!("Tick {}s", 1)
     }
 }
 
@@ -185,7 +168,11 @@ pub async fn bms_rx_processor() {
             Some(id) => id,
             None => continue,
         };
-        if !id == 0x7bb {
+
+        // warn!("{}: {:?}", id, Debug2Format(&frame.data()));
+
+        // if !id == 0x7bb { // weird rust bug on nightly?
+        if id != 1979 {
             update_solax = match data.rapid_data_processor(frame) {
                 Ok(state) => state, // data can be parsed without diag data is true - use a different validity checker
                 Err(e) => {
@@ -212,13 +199,14 @@ pub async fn bms_rx_processor() {
                 }
             };
         }
+
         if update_solax {
             push_bms_to_solax(bms_validated).await;
             info!("Pushed values to Inverter data store");
             push_all_to_mqtt(bms_validated).await;
             info!("Push values to MQTT data store");
-            update_solax = false;
         }
+        update_solax = false;
     }
 }
 
@@ -265,7 +253,7 @@ async fn push_bms_to_solax(bmsdata: kangoo_battery::Bms) {
     solax_data.v_max = bmsdata.max_volts as f32; // cell as millivolts
     solax_data.v_min = bmsdata.min_volts as f32;
     solax_data.valid = bmsdata.valid;
-    solax_data.timestamp = Some(Instant::now());
+    // solax_data.timestamp = Some(Instant::now());
 }
 
 async fn push_all_to_mqtt(bmsdata: kangoo_battery::Bms) {
@@ -298,14 +286,13 @@ pub async fn contactor_task(pin: PA15, timer: TIM2) {
     loop {
         let state = CONTACTOR_STATE.wait().await;
         match (state, active) {
-            (true, true) => {}
-            (true, false) => {
+            (false, true) => {
                 warn!("Contactor shutdown");
                 pwm.disable(TimerChannel::Ch1);
                 info!("Contactor disabled");
                 active = false;
             }
-            (false, true) => {
+            (true, false) => {
                 warn!("Activate 100% duty, wait 100ms, set duty to 50%, set active to true");
                 pwm.enable(TimerChannel::Ch1);
                 info!("Contactor enabled");
@@ -316,7 +303,8 @@ pub async fn contactor_task(pin: PA15, timer: TIM2) {
                 info!("Contactor at hold 50%");
                 active = true
             }
-            (false, false) => {}
+            (true, true) => info!("Contactor holding"),
+            _ => (),
         }
     }
 }
@@ -343,8 +331,67 @@ pub async fn uart_task(uart: Uart<'static, USART3, DMA1_CH2, DMA1_CH3>) {
     loop {
         let state = STATE.wait().await;
         if let CommsState::UpdateMqtt = state {
-            if let Some(message) = MQTTFMT.lock().await.device_update_msg() {
-                uart.write(message.as_bytes()).await.unwrap();
+            if let Some(mut message) = MQTTFMT.lock().await.device_update_msg() {
+                message.push('\n').unwrap();
+                uart.write(message.as_ref()).await.unwrap();
+                info!("UART sent: {}", Debug2Format(&message));
+            }
+        }
+    }
+}
+
+#[derive(Clone, Copy, Serialize)]
+pub struct MqttFormat {
+    soc: f32,
+    battery_voltage: f32,
+    highest_cell_voltage: f32,
+    lowest_cell_voltage: f32,
+    highest_cell_temperature: f32,
+    lowest_cell_temperature: f32,
+    #[serde(with = "BigArray")]
+    #[serde(skip)]
+    cells_millivolts: [u16; 96],
+    #[serde(skip)]
+    #[serde(with = "BigArray")]
+    cell_balance: [bool; 96],
+    current_amps: f32,
+    kwh_remaining: f32,
+    charge_rate: f32,
+    discharge_rate: f32,
+    valid: bool,
+}
+
+impl MqttFormat {
+    fn new() -> Self {
+        Self {
+            soc: 0.0,
+            battery_voltage: 0.0,
+            highest_cell_voltage: 0.0,
+            lowest_cell_voltage: 0.0,
+            highest_cell_temperature: 0.0,
+            lowest_cell_temperature: 0.0,
+            cells_millivolts: [0; 96],
+            cell_balance: [false; 96],
+            current_amps: 0.0,
+            kwh_remaining: 0.0,
+            charge_rate: 0.0,
+            discharge_rate: 0.0,
+            valid: false,
+        }
+    }
+    fn device_update_msg(&self) -> Option<serde_json_core::heapless::String<1024>> {
+        // let mut string: heapless::String<1024> = heapless::String::new();
+        // unsafe block due to bytes_mut
+
+        match serde_json_core::to_string(&self) {
+            // match serde_json_core::to_slice(&self, string.as_bytes_mut()) {
+            Ok(string) => {
+                info!("Serialiased {} bytes", &string.len());
+                Some(string)
+            }
+            Err(e) => {
+                error!("MQTT serialiasation failed: {}", Debug2Format(&e));
+                None
             }
         }
     }
