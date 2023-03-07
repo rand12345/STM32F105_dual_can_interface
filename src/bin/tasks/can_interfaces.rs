@@ -1,5 +1,4 @@
 use crate::statics::*;
-use crate::BITTIMINGS;
 use defmt::{warn, Debug2Format};
 use embassy_futures::yield_now;
 use embassy_stm32::can::{bxcan::*, Can};
