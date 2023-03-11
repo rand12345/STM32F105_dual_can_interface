@@ -31,23 +31,32 @@ defmt = {version = "0.3.2", features =["alloc"]}
 defmt-rtt = "0.4"
 panic-probe = { version = "0.3", features = ["print-defmt"] }
 panic-halt = "0.2"
-embassy-sync = {git = "https://github.com/embassy-rs/embassy.git"}
-embassy-stm32 = { git = "https://github.com/embassy-rs/embassy.git", rev= "9e81f7dd4a9101cf52c309c1e526a9fda0f72545",features = ["defmt","stm32f105rb", "nightly", "unstable-pac", "memory-x", "time-driver-any"]  } # version = "0.1.0", 
-embassy-time = { version = "0.1.0", features = ["defmt", "defmt-timestamp-uptime"]} #  "tick-hz-32_768"
-can-bit-timings= "1.1.0"
+# embassy-sync = {version = "0.1.0"}
+# embassy-stm32 = {features = ["defmt", "stm32f105rb", "nightly", "unstable-pac", "memory-x", "time-driver-any"]  } 
+# embassy-time = { version = "0.1.0",  default-features = false, features = ["defmt", "defmt-timestamp-uptime"]} #, "tick-hz-32_768"
+# embassy-executor = { version = "0.1.1", features = ["defmt", "integrated-timers"]  } 
+# embassy-futures = { version = "0.1.0", features = ["defmt"]}
+
+
+embassy-sync = { version = "0.1.0", features = ["defmt"] }
+embassy-executor = { version = "0.1.0", features = ["defmt", "integrated-timers"] }
+embassy-time = { version = "0.1.0",  features = ["defmt", "defmt-timestamp-uptime", "tick-hz-32_768"] }
+embassy-stm32 = { version = "0.1.0",  features = ["nightly", "defmt", "stm32f105rb", "unstable-pac", "memory-x", "time-driver-tim3"]  }
+embassy-futures = { version = "0.1.0" }
+
+
+
 embedded-alloc = "0.5.0"
-embassy-executor = { git = "https://github.com/embassy-rs/embassy.git", rev= "9e81f7dd4a9101cf52c309c1e526a9fda0f72545", features = ["defmt", "integrated-timers"]  } # version = "0.1.0", rev = "255f5cb3db6b928578b94f22c3f00da601807475",
+can-bit-timings= "1.1.0"
 embedded-hal-async = { version = "=0.2.0-alpha.0"}
 heapless = "0.7"
 static_cell = "1.0.0"
-embassy-futures = { version = "0.1.0", features = ["defmt"]}
 embedded-io = "0.4.0"
 lazy_static = {version = "1.4.0", features = ["spin_no_std"]}
-kangoo_battery = {git = "https://github.com/rand12345/kangoo_battery.git", branch = "split_readings", optional = true, features = ["defmt"]}
+kangoo_battery = {git = "https://github.com/rand12345/kangoo_battery.git", branch = "no_timers", optional = true}
 solax_can_bus = {git = "https://github.com/rand12345/solax_can_bus.git", branch = "return-iterator", optional = true, features = ["defmt"]}
 serde = {version = "1", default-features = false }
-serde-big-array = "0.5.0"
-# serde_json = {version = "1.0.93", default-features = false, features= ["alloc"]}
+# serde-big-array = "0.5.0"
 serde-json-core = {git = "https://github.com/rust-embedded-community/serde-json-core.git"}
 
 
@@ -95,8 +104,13 @@ overflow-checks = false  # <-
 
 # uncomment this to switch from the crates.io version of defmt to its git version
 # check app-template's README for instructions
-# [patch.crates-io]
-# defmt = { git = "https://github.com/knurling-rs/defmt", rev = "use defmt version reported by `probe-run --version`" }
-# defmt-rtt = { git = "https://github.com/knurling-rs/defmt", rev = "use defmt version reported by `probe-run --version`" }
-# defmt-test = { git = "https://github.com/knurling-rs/defmt", rev = "use defmt version reported by `probe-run --version`" }
-# panic-probe = { git = "https://github.com/knurling-rs/defmt", rev = "use defmt version reported by `probe-run --version`" }
+[patch.crates-io]
+embassy-futures = {git = "https://github.com/embassy-rs/embassy.git"}
+embassy-executor = {git = "https://github.com/embassy-rs/embassy.git"}
+embassy-time = {git = "https://github.com/embassy-rs/embassy.git"}
+embassy-sync = {git = "https://github.com/embassy-rs/embassy.git"}
+embassy-stm32 = {git = "https://github.com/embassy-rs/embassy.git"}
+defmt = { git = "https://github.com/knurling-rs/defmt", tree = "defmt-v0.3.2" }
+defmt-rtt = { git = "https://github.com/knurling-rs/defmt", tree = "defmt-v0.3.2" }
+defmt-test = { git = "https://github.com/knurling-rs/defmt", tree = "defmt-v0.3.2" }
+panic-probe = { git = "https://github.com/knurling-rs/defmt", tree = "defmt-v0.3.2" }
