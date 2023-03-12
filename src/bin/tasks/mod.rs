@@ -1,5 +1,5 @@
 use defmt::{info, warn};
-use embassy_stm32::peripherals::{IWDG, PA15, PC12, TIM2};
+use embassy_stm32::peripherals::{PA15, PC12, TIM2};
 
 use crate::statics::CONTACTOR_STATE;
 
@@ -60,22 +60,22 @@ pub async fn led_task(led: PC12) {
     }
 }
 
-#[embassy_executor::task]
-pub async fn init(instance: IWDG, timeout_us: u32) {
-    use crate::statics::WDT;
-    use embassy_stm32::wdg::IndependentWatchdog;
-    let mut wdt = IndependentWatchdog::new(instance, timeout_us); // 1sec
-    unsafe {
-        wdt.unleash();
-    }
-    info!("Watchdog started");
-    loop {
-        // await a signal and pet the dog, timeout triggers device reset
-        let signal = WDT.wait().await;
-        if signal {
-            unsafe {
-                wdt.pet();
-            }
-        }
-    }
-}
+// #[embassy_executor::task]
+// pub async fn init(instance: IWDG, timeout_us: u32) {
+//     use crate::statics::WDT;
+//     use embassy_stm32::wdg::IndependentWatchdog;
+//     let mut wdt = IndependentWatchdog::new(instance, timeout_us); // 1sec
+//     unsafe {
+//         wdt.unleash();
+//     }
+//     info!("Watchdog started");
+//     loop {
+//         // await a signal and pet the dog, timeout triggers device reset
+//         let signal = WDT.wait().await;
+//         if signal {
+//             unsafe {
+//                 wdt.pet();
+//             }
+//         }
+//     }
+// }
