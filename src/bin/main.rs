@@ -1,9 +1,10 @@
 #![no_std]
 #![no_main]
 #![feature(type_alias_impl_trait)]
-#![feature(alloc_error_handler)]
-#![feature(generators)]
-#![feature(async_closure)]
+// #![feature(alloc_error_handler)]
+// #![feature(generators)]
+// #![feature(async_closure)]
+#![feature(error_in_core)]
 
 use defmt::debug;
 use embassy_executor::Spawner;
@@ -12,6 +13,8 @@ use embassy_stm32::time::mhz;
 use embedded_alloc::Heap;
 
 use {defmt_rtt as _, panic_probe as _};
+pub mod config;
+mod errors;
 mod statics;
 mod tasks;
 mod types;
@@ -20,10 +23,10 @@ mod types;
 static HEAP: Heap = Heap::empty();
 
 #[embassy_executor::main]
-async fn main(spawner: Spawner) -> ! {
+async fn main(spawner: Spawner) {
     {
         use core::mem::MaybeUninit;
-        const HEAP_SIZE: usize = 1024;
+        const HEAP_SIZE: usize = 1024 * 2;
         static mut HEAP_MEM: [MaybeUninit<u8>; HEAP_SIZE] = [MaybeUninit::uninit(); HEAP_SIZE];
         unsafe { HEAP.init(HEAP_MEM.as_ptr() as usize, HEAP_SIZE) }
     }
@@ -65,7 +68,7 @@ async fn main(spawner: Spawner) -> ! {
     defmt::unwrap!(spawner.spawn(crate::tasks::can_processors::inverter_rx()));
     defmt::unwrap!(spawner.spawn(crate::tasks::can_processors::bms_tx_periodic()));
 
-    // always start can 1 first
+    // // always start can 1 first
     defmt::unwrap!(spawner.spawn(crate::tasks::can_interfaces::bms_task(can1)));
     defmt::unwrap!(spawner.spawn(crate::tasks::can_interfaces::inverter_task(can2)));
 

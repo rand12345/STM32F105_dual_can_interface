@@ -1,5 +1,5 @@
 use crate::statics::*;
-use defmt::{warn, Debug2Format};
+use defmt::warn;
 use embassy_futures::yield_now;
 use embassy_stm32::can::{bxcan::*, Can};
 use embassy_stm32::peripherals::*;
@@ -21,9 +21,10 @@ pub async fn inverter_task(mut can: Can<'static, CAN2>) {
         .enable();
     warn!("Starting Inverter Can2");
     let canid = |frame: &Frame| -> u32 {
-        match frame.id() {
-            Standard(_) => 0,
-            Extended(id) => id.as_raw(),
+        if let Extended(id) = frame.id() {
+            id.as_raw()
+        } else {
+            0
         }
     };
 
@@ -34,17 +35,16 @@ pub async fn inverter_task(mut can: Can<'static, CAN2>) {
                 rx.send(frame).await
             };
         };
-        if let Ok(frame) = tx.try_recv() {
-            match can.transmit(&frame) {
-                Ok(_) => {
-                    defmt::info!("Can1 Tx: {:?}", frame);
-                    while !can.is_transmitter_idle() {
-                        yield_now().await
-                    }
+        let Ok(frame) = tx.try_recv() else { continue };
+        match can.transmit(&frame) {
+            Ok(_) => {
+                // defmt::info!("Can1 Tx: {:?}", frame);
+                while !can.is_transmitter_idle() {
+                    yield_now().await
                 }
-                Err(WouldBlock) => (),
-                Err(Other(e)) => defmt::error!("Inv Tx error {:?}", Debug2Format(&e)),
             }
+            Err(WouldBlock) => (),
+            Err(Other(_)) => defmt::error!("Inv Tx error"),
         }
     }
 }
@@ -77,7 +77,7 @@ pub async fn bms_task(mut can: Can<'static, CAN1>) {
     };
 
     loop {
-        WDT.signal(true); // temp whilst testing
+        // WDT.signal(true); // temp whilst testing
         yield_now().await;
         if let Ok(frame) = can.receive() {
             // defmt::println!("BMS: Rx {:?}", frame);
@@ -85,18 +85,17 @@ pub async fn bms_task(mut can: Can<'static, CAN1>) {
                 rx.send(frame).await;
             };
         };
-        if let Ok(frame) = tx.try_recv() {
-            match can.transmit(&frame) {
-                Ok(_) => {
-                    defmt::info!("BMS Tx: {}", Debug2Format(&(frame.id(), frame.data())));
+        let Ok(frame) = tx.try_recv() else { continue };
+        match can.transmit(&frame) {
+            Ok(_) => {
+                // defmt::info!("BMS Tx: {}", Debug2Format(&(frame.id(), frame.data())));
 
-                    while !can.is_transmitter_idle() {
-                        yield_now().await
-                    }
+                while !can.is_transmitter_idle() {
+                    yield_now().await
                 }
-                Err(WouldBlock) => (),
-                Err(Other(e)) => defmt::error!("BMS Tx error {:?}", Debug2Format(&e)),
             }
+            Err(WouldBlock) => (),
+            Err(Other(_)) => defmt::error!("BMS Tx error"),
         }
     }
 }
