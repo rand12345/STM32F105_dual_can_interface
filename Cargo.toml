@@ -38,10 +38,10 @@ embassy-futures = { version = "0.1.0" }
 
 embedded-alloc = "0.5.0"
 lazy_static = {version = "1",  default-features = false, features = ["spin_no_std"]}
-# kangoo_battery = {git = "https://github.com/rand12345/kangoo_battery.git", branch = "BmsErrors", optional = true}
-kangoo_battery = {path = "../../tmp/kangoo_battery", default-features = false,  optional = true} #, features = ["defmt"]}
-# solax_can_bus = {git = "https://github.com/rand12345/solax_can_bus.git", branch = "return-iterator", optional = true, features = ["defmt"]}
-solax_can_bus = {path = "../../tmp/solax_can_bus", default-features = false,  optional = true, features=["no_std", "range_checked"]} 
+kangoo_battery = {git = "https://github.com/rand12345/kangoo_battery.git", branch = "BmsErrors", optional = true}
+# kangoo_battery = {path = "../../tmp/kangoo_battery", default-features = false,  optional = true} #, features = ["defmt"]}
+solax_can_bus = {git = "https://github.com/rand12345/solax_can_bus.git", branch = "return-iterator", optional = true, features = ["defmt"]}
+# solax_can_bus = {path = "../../tmp/solax_can_bus", default-features = false,  optional = true, features=["no_std", "range_checked"]} 
 miniserde = {version = "0", default-features = false}
 
 
