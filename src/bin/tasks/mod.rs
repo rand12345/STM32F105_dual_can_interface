@@ -35,7 +35,7 @@ pub async fn contactor_task(pin: PA15, timer: TIM2) {
                 pwm.set_duty(TimerChannel::Ch1, max);
                 info!("Contactor at 100%");
                 Timer::after(Duration::from_millis(100)).await;
-                pwm.set_duty(TimerChannel::Ch1, max / 2);
+                pwm.set_duty(TimerChannel::Ch1, (max / 4) *3);
                 info!("Contactor at hold 50%");
                 active = true
             }
