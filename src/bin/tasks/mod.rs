@@ -4,7 +4,22 @@ use embassy_stm32::peripherals::{PA15, PC12, TIM2};
 use crate::statics::CONTACTOR_STATE;
 
 pub mod can_interfaces;
-pub mod can_processors;
+
+#[cfg(feature = "kangoo")]
+pub mod can_processors_kangoo;
+
+#[cfg(feature = "ze50")]
+pub mod can_processors_ze50;
+
+#[cfg(feature = "pylontech")]
+pub mod can_processors_pylontech;
+
+#[cfg(feature = "byd")]
+pub mod can_processors_byd;
+
+#[cfg(feature = "solax")]
+pub mod can_processors_solax;
+
 pub mod mqtt;
 
 // Misc tasks
@@ -35,7 +50,7 @@ pub async fn contactor_task(pin: PA15, timer: TIM2) {
                 pwm.set_duty(TimerChannel::Ch1, max);
                 info!("Contactor at 100%");
                 Timer::after(Duration::from_millis(100)).await;
-                pwm.set_duty(TimerChannel::Ch1, (max / 4) *3);
+                pwm.set_duty(TimerChannel::Ch1, (max / 4) * 3);
                 info!("Contactor at hold 50%");
                 active = true
             }

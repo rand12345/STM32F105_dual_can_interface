@@ -14,10 +14,13 @@ name = "integration"
 harness = false
 
 [features]
-default = ["defmt", "kangoo_battery", "solax", "kangoo"]
+default = ["defmt", "kangoo_battery","byd", "ze50"] #"kangoo"] # "solax" # "pylontech"
 defmt = []
-kangoo = ["dep:kangoo_battery"]
-solax = ["dep:solax_can_bus"]
+byd = []
+# pylontech = ["dep:pylontech_protocol"]
+ze50 = ["dep:renault_zoe_ph2_battery"]
+# kangoo = ["dep:kangoo_battery"]
+# solax = ["dep:solax_can_bus"]
 kangoo_battery = ["dep:kangoo_battery"]
 
 [dependencies]
@@ -43,7 +46,8 @@ kangoo_battery = {git = "https://github.com/rand12345/kangoo_battery.git", branc
 solax_can_bus = {git = "https://github.com/rand12345/solax_can_bus.git", branch = "return-iterator", optional = true, features = ["defmt"]}
 # solax_can_bus = {path = "../../tmp/solax_can_bus", default-features = false,  optional = true, features=["no_std", "range_checked"]} 
 miniserde = {version = "0", default-features = false}
-
+pylontech_protocol = {version = "0", optional = true}
+renault_zoe_ph2_battery = {version = "0", optional = true}
 
 [dev-dependencies]
 defmt-test = "0.3"
@@ -89,6 +93,12 @@ overflow-checks = false  # <-
 # uncomment this to switch from the crates.io version of defmt to its git version
 # check app-template's README for instructions
 [patch.crates-io]
+
+renault_zoe_ph2_battery = {git = "https://github.com/rand12345/renault_zoe_ph2_battery.git"}
+# renault_zoe_ph2_battery = {path = "../renault_zoe_ph2_battery" }#{git = "https://github.com/rand12345/renault_zoe_ph2_battery.git"}
+pylontech_protocol = {git = "https://github.com/rand12345/pylontech_protocol.git"}
+# pylontech_protocol = {path = "../pylontech_protocol"}
+# byd_protocol = {path = "../byd_protocol"}
 embassy-futures = {git = "https://github.com/embassy-rs/embassy.git"}
 embassy-executor = {git = "https://github.com/embassy-rs/embassy.git"}
 embassy-time = {git = "https://github.com/embassy-rs/embassy.git"}
