@@ -1,5 +1,5 @@
 use crate::statics::*;
-use defmt::warn;
+use defmt::{warn, Debug2Format};
 use embassy_futures::yield_now;
 use embassy_stm32::can::{bxcan::*, Can};
 use embassy_stm32::peripherals::*;
@@ -53,7 +53,7 @@ pub async fn inverter_task(mut can: Can<'static, CAN2>) {
         let Ok(frame) = tx.try_recv() else { continue };
         match can.transmit(&frame) {
             Ok(_) => {
-                // defmt::info!("Can1 Tx: {:?}", frame);
+                defmt::info!("Inv Tx: {}", Debug2Format(&(frame.id(), frame.data())));
                 while !can.is_transmitter_idle() {
                     yield_now().await
                 }
@@ -96,14 +96,17 @@ pub async fn bms_task(mut can: Can<'static, CAN1>) {
         yield_now().await;
         if let Ok(frame) = can.receive() {
             // defmt::println!("BMS: Rx {:?}", frame);
-            // if [0x155, 0x424, 0x425, 0x4ae, 0x7bb].contains(&canid(&frame)) {
-            rx.send(frame).await;
-            // };
+            if let embassy_stm32::can::bxcan::Id::Extended(id) = frame.id() {
+                if id.as_raw() == !0x18DAF1DB {
+                    defmt::info!("BMS>>STM {:?}", Debug2Format(&(frame.id(), frame.data())));
+                    rx.send(frame).await;
+                };
+            }
         };
         let Ok(frame) = tx.try_recv() else { continue };
         match can.transmit(&frame) {
             Ok(_) => {
-                // defmt::info!("BMS Tx: {}", Debug2Format(&(frame.id(), frame.data())));
+                defmt::info!("STM>>BMS: {}", Debug2Format(&(frame.id(), frame.data())));
 
                 while !can.is_transmitter_idle() {
                     yield_now().await

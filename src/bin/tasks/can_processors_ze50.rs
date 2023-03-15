@@ -19,19 +19,21 @@ pub async fn bms_tx_periodic() {
             error!("Periodic queue buf error")
         };
     };
+
+    ticker_ms(2000).next().await;
     let mut preamble_frame_number_1 = true;
     let preamble_payloads = preamble_payloads();
     warn!("Starting BMS TX periodic");
 
     // send init
     for payload in init_payloads() {
+        ticker_ms(200).next().await;
         let frame = Frame::new(Id::Standard(StandardId::new(0x373).unwrap()), &payload);
         sender(frame.unwrap());
-        ticker_ms(200).next().await
     }
 
     let mut t1 = ticker_ms(200);
-    let mut t2 = ticker_ms(100);
+    let mut t2 = ticker_ms(225);
     loop {
         let frame: Frame = match select(t1.next(), t2.next()).await {
             Either::First(_) => {
@@ -47,6 +49,7 @@ pub async fn bms_tx_periodic() {
                 Frame::new(Id::Standard(StandardId::new(0x373).unwrap()), &payload).unwrap()
             }
             Either::Second(_) => {
+                // ticker_ms(50).next().await;
                 // read the current ZE50_DATA mode
                 let pid = { ZE50_DATA.lock().await.req_code };
                 if pid == 0x1 {
@@ -57,6 +60,7 @@ pub async fn bms_tx_periodic() {
                         error!("BMS value parsing failed: {}", Debug2Format(&e))
                     } else {
                         push_bms_to_inverter(*bms).await;
+                        info!("{}", Debug2Format(&*bms));
                         let config = CONFIG.lock().await;
                         bms.set_dod(config.dod.min(), config.dod.max());
                     };
@@ -111,7 +115,7 @@ pub async fn bms_rx() {
                 )
             }
         } else {
-            error!("Found standard Id on ZE50 can line");
+            // error!("Found standard Id on ZE50 can line");
         }
     }
 }
