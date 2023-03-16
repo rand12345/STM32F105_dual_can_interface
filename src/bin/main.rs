@@ -66,6 +66,8 @@ async fn main(spawner: Spawner) {
 
     #[cfg(feature = "kangoo")]
     use crate::tasks::can_processors_kangoo::*;
+    #[cfg(feature = "tesla_m3")]
+    use crate::tasks::can_processors_tesla_m3::*;
     #[cfg(feature = "ze50")]
     use crate::tasks::can_processors_ze50::*;
 
@@ -80,7 +82,7 @@ async fn main(spawner: Spawner) {
 
     defmt::unwrap!(spawner.spawn(bms_rx()));
 
-    defmt::unwrap!(spawner.spawn(inverter_rx()));  // switched off whilst debugging BMS
+    defmt::unwrap!(spawner.spawn(inverter_rx())); // switched off whilst debugging BMS
 
     defmt::unwrap!(spawner.spawn(bms_tx_periodic()));
 

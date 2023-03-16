@@ -8,9 +8,9 @@ use embedded_hal::can::Id;
 use embedded_hal::can::StandardId;
 
 // hacky
-const send_every_secs: u64 = 1;
-const charger_volts_high_val: u16 = 6500;
-const charger_volts_low_val: u16 = 4800;
+const SEND_EVERY_SECS: u64 = 1;
+const CHARGER_VOLTS_HIGH_VAL: u16 = 6500;
+const CHARGER_VOLTS_LOW_VAL: u16 = 4800;
 
 // #[allow(unused_assignments)]
 #[cfg(feature = "byd")]
@@ -26,20 +26,19 @@ pub async fn inverter_rx() -> ! {
         if let Ok(frame) = recv.try_recv() {
             warn!("Debug: Inv >> Gateway {}", Debug2Format(&frame))
         };
-        Timer::after(Duration::from_secs(send_every_secs)).await;
+        Timer::after(Duration::from_secs(SEND_EVERY_SECS)).await;
         inverter_comms_valid = false;
         if LAST_BMS_MESSAGE.lock().await.elapsed().as_secs() > LAST_READING_TIMEOUT_SECS {
             error!("BMS last update timeout, inverter communications stopped");
             CONTACTOR_STATE.signal(inverter_comms_valid);
             continue;
         };
-        // hacky for now - will fail to compile if not an option because there is no standadised BMS struct/trait
-        #[cfg(feature = "ze50")]
-        let bmsdata = { *ZE50_BMS.lock().await };
+        inverter_comms_valid = true;
+        let bmsdata = { *BMS.lock().await };
 
-        let charge_volts_high = charger_volts_high_val.to_le_bytes();
+        let charge_volts_high = CHARGER_VOLTS_HIGH_VAL.to_le_bytes();
 
-        let charge_volts_low = charger_volts_low_val.to_le_bytes();
+        let charge_volts_low = CHARGER_VOLTS_LOW_VAL.to_le_bytes();
         let charge_current = bmsdata.charge_max.to_le_bytes();
         let discharge_current = bmsdata.discharge_max.to_le_bytes();
         let soc = bmsdata.kwh_remaining.to_le_bytes();

@@ -20,6 +20,9 @@ pub mod can_processors_byd;
 #[cfg(feature = "solax")]
 pub mod can_processors_solax;
 
+#[cfg(feature = "tesla_m3")]
+pub mod can_processors_tesla_m3;
+
 pub mod mqtt;
 
 // Misc tasks

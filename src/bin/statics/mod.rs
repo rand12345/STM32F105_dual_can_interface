@@ -43,10 +43,25 @@ lazy_static! {
 
 #[cfg(feature = "ze50")]
 lazy_static! {
-    pub static ref ZE50_DATA: Ze50DataMutex =
+    pub static ref BMS_DATA: Ze50DataMutex =
         embassy_sync::mutex::Mutex::new(renault_zoe_ph2_battery::Data::new());
-    pub static ref ZE50_BMS: Ze50BmsMutex =
+    pub static ref BMS: Ze50BmsMutex =
         embassy_sync::mutex::Mutex::new(renault_zoe_ph2_battery::bms::Bms::new());
+}
+#[cfg(feature = "kangoo")]
+lazy_static! {
+    pub static ref BMS_DATA: Ze50DataMutex =
+        embassy_sync::mutex::Mutex::new(kangoo_battery::Data::new());
+    pub static ref BMS: Ze50BmsMutex =
+        embassy_sync::mutex::Mutex::new(kangoo_battery::bms::Bms::new());
+}
+
+#[cfg(feature = "tesla_m3")]
+lazy_static! {
+    pub static ref BMS_DATA: Ze50DataMutex =
+        embassy_sync::mutex::Mutex::new(crate::tasks::can_processors_tesla_m3::Data::new());
+    pub static ref BMS: Ze50BmsMutex =
+        embassy_sync::mutex::Mutex::new(bms_standard::Bms::new(bms_standard::Config::default()));
 }
 // pub const BITTIMINGS: u32 = 0x001c0000; // 500kps @ 8MHz // config.rcc.sys_ck = Some(mhz(64)); config.rcc.pclk1 = Some(mhz(24)); << experimental >>
 pub const BITTIMINGS: u32 = 0x00050007; // 500kps @ 32Mhz // config.rcc.sys_ck = Some(mhz(64)); config.rcc.pclk1 = Some(mhz(24)); << experimental >>

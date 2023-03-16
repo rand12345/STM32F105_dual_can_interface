@@ -26,4 +26,10 @@ pub type InverterDataMutex = embassy_sync::mutex::Mutex<_Mutex, pylontech_protoc
 
 #[cfg(feature = "ze50")]
 pub type Ze50DataMutex = embassy_sync::mutex::Mutex<_Mutex, renault_zoe_ph2_battery::Data>;
+#[cfg(feature = "ze50")]
 pub type Ze50BmsMutex = embassy_sync::mutex::Mutex<_Mutex, renault_zoe_ph2_battery::bms::Bms>;
+#[cfg(feature = "tesla_m3")]
+pub type Ze50DataMutex =
+    embassy_sync::mutex::Mutex<_Mutex, crate::tasks::can_processors_tesla_m3::Data>;
+#[cfg(feature = "tesla_m3")]
+pub type Ze50BmsMutex = embassy_sync::mutex::Mutex<_Mutex, bms_standard::Bms>;
