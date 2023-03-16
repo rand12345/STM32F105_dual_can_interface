@@ -95,11 +95,8 @@ overflow-checks = false  # <-
 # check app-template's README for instructions
 [patch.crates-io]
 
-# renault_zoe_ph2_battery = {git = "https://github.com/rand12345/renault_zoe_ph2_battery.git"}
-renault_zoe_ph2_battery = {path = "../../tmp/renault_zoe_ph2_battery" }#{git = "https://github.com/rand12345/renault_zoe_ph2_battery.git"}
+renault_zoe_ph2_battery = {git = "https://github.com/rand12345/renault_zoe_ph2_battery.git"}
 pylontech_protocol = {git = "https://github.com/rand12345/pylontech_protocol.git"}
-# pylontech_protocol = {path = "../pylontech_protocol"}
-# byd_protocol = {path = "~/tmp/byd_protocol"}
 embassy-futures = {git = "https://github.com/embassy-rs/embassy.git"}
 embassy-executor = {git = "https://github.com/embassy-rs/embassy.git"}
 embassy-time = {git = "https://github.com/embassy-rs/embassy.git"}

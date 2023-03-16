@@ -118,8 +118,10 @@ pub async fn bms_rx() {
                     renault_zoe_ph2_battery::BmsError::Current(_) => (),
                     renault_zoe_ph2_battery::BmsError::UnknownCanData => (),
                 }
-            } else {*LAST_BMS_MESSAGE.lock().await = Instant::now();
-                info!("BMS watchdog reset")};
+            } else {
+                *LAST_BMS_MESSAGE.lock().await = Instant::now();
+                info!("BMS watchdog reset")
+            };
         } else {
             // error!("Found standard Id on ZE50 can line");
         }
