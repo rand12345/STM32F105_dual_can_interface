@@ -4,6 +4,7 @@ use defmt::info;
 use defmt::Debug2Format;
 use embassy_stm32::peripherals::*;
 use embassy_stm32::usart::Uart;
+use embassy_time::Instant;
 use miniserde::__private::String;
 use miniserde::{json, Serialize};
 #[embassy_executor::task]
@@ -15,7 +16,7 @@ pub async fn uart_task(uart: Uart<'static, USART3, DMA1_CH2, DMA1_CH3>) {
     };
     let (mut tx, mut rx) = uart.split();
     let mut buf = [0_u8; 512];
-
+    let mut mqtt_frequency = Instant::now();
     loop {
         match select(rx.read_until_idle(&mut buf), SEND_MQTT.wait()).await {
             Either::First(read) => match read {
@@ -31,6 +32,10 @@ pub async fn uart_task(uart: Uart<'static, USART3, DMA1_CH2, DMA1_CH3>) {
                 Err(_) => continue,
             },
             Either::Second(_) => {
+                if mqtt_frequency.elapsed().as_secs() < LAST_READING_TIMEOUT_SECS {
+                    continue;
+                }
+                mqtt_frequency = Instant::now();
                 buf = [0_u8; 512];
                 let mqtt_data = MQTTFMT.lock().await;
                 if let Err(e) = tx.write(mqtt_data.device_update_msg().as_bytes()).await {

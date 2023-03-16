@@ -64,11 +64,28 @@ async fn main(spawner: Spawner) {
     defmt::unwrap!(spawner.spawn(crate::tasks::contactor_task(p.PA15, p.TIM2)));
     defmt::unwrap!(spawner.spawn(crate::tasks::mqtt::uart_task(uart)));
 
-    defmt::unwrap!(spawner.spawn(crate::tasks::can_processors::bms_rx()));
-    defmt::unwrap!(spawner.spawn(crate::tasks::can_processors::inverter_rx()));
-    defmt::unwrap!(spawner.spawn(crate::tasks::can_processors::bms_tx_periodic()));
+    #[cfg(feature = "kangoo")]
+    use crate::tasks::can_processors_kangoo::*;
+    #[cfg(feature = "ze50")]
+    use crate::tasks::can_processors_ze50::*;
+
+    #[cfg(feature = "solax")]
+    use crate::tasks::can_processors_solax::*;
+
+    #[cfg(feature = "pylontech")]
+    use crate::tasks::can_processors_pylontech::*;
+
+    #[cfg(feature = "byd")]
+    use crate::tasks::can_processors_byd::*;
+
+    defmt::unwrap!(spawner.spawn(bms_rx()));
+
+    defmt::unwrap!(spawner.spawn(inverter_rx()));  // switched off whilst debugging BMS
+
+    defmt::unwrap!(spawner.spawn(bms_tx_periodic()));
 
     // // always start can 1 first
+
     defmt::unwrap!(spawner.spawn(crate::tasks::can_interfaces::bms_task(can1)));
     defmt::unwrap!(spawner.spawn(crate::tasks::can_interfaces::inverter_task(can2)));
 
