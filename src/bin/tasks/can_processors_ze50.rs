@@ -107,13 +107,17 @@ pub async fn bms_rx() {
             let mut data = ZE50_DATA.lock().await;
             // process_payload into Data struct
             if let Err(e) = data.process_payload(frame.data().unwrap()) {
-                error!(
-                    "Rx BMS processing error: {:?} RX: {:02x} {:02x}",
-                    Debug2Format(&e),
-                    id.as_raw(),
-                    frame.data().unwrap()
-                )
-            }
+                match e {
+                    renault_zoe_ph2_battery::BmsError::InvalidData => (),
+                    renault_zoe_ph2_battery::BmsError::RangeError(_) => (),
+                    renault_zoe_ph2_battery::BmsError::IsoTpError => (),
+                    renault_zoe_ph2_battery::BmsError::InvalidCanData => (),
+                    renault_zoe_ph2_battery::BmsError::InvalidTemperature(_) => (),
+                    renault_zoe_ph2_battery::BmsError::PackVolts(_) => (),
+                    renault_zoe_ph2_battery::BmsError::Current(_) => (),
+                    renault_zoe_ph2_battery::BmsError::UnknownCanData => (),
+                }
+            };
         } else {
             // error!("Found standard Id on ZE50 can line");
         }

@@ -65,10 +65,27 @@ pub async fn inverter_task(mut can: Can<'static, CAN2>) {
 }
 #[embassy_executor::task]
 pub async fn bms_task(mut can: Can<'static, CAN1>) {
-    // use embassy_stm32::can::bxcan::Id::Standard;
+    #[cfg(feature = "ze50")]
+    use embassy_stm32::can::bxcan::ExtendedId;
+
+    // BMS Filter ============================================
+    #[cfg(feature = "ze50")]
+    can.modify_filters().set_split(1).enable_bank(
+        0,
+        Fifo::Fifo0,
+        filter::Mask32::frames_with_ext_id(
+            ExtendedId::new(0x18DAF1DB).unwrap(),
+            ExtendedId::new(0x1ffffff).unwrap(),
+        ),
+    );
+
+    #[cfg(not(feature = "ze50"))]
     can.modify_filters()
         .set_split(1)
-        .enable_bank(0, Fifo::Fifo0, filter::Mask32::accept_all())
+        .enable_bank(0, Fifo::Fifo0, filter::Mask32::accept_all());
+
+    // Inverter Filter ============================================
+    can.modify_filters()
         .slave_filters()
         .enable_bank(1, Fifo::Fifo0, filter::Mask32::accept_all());
 
@@ -96,12 +113,12 @@ pub async fn bms_task(mut can: Can<'static, CAN1>) {
         yield_now().await;
         if let Ok(frame) = can.receive() {
             // defmt::println!("BMS: Rx {:?}", frame);
-            if let embassy_stm32::can::bxcan::Id::Extended(id) = frame.id() {
-                if id.as_raw() == !0x18DAF1DB {
-                    defmt::info!("BMS>>STM {:?}", Debug2Format(&(frame.id(), frame.data())));
-                    rx.send(frame).await;
-                };
-            }
+            // if let embassy_stm32::can::bxcan::Id::Extended(id) = frame.id() {
+            // if id.as_raw() == 0x18DAF1DB {
+            defmt::info!("BMS>>STM {:?}", Debug2Format(&(frame.id(), frame.data())));
+            rx.send(frame).await;
+            // };
+            // }
         };
         let Ok(frame) = tx.try_recv() else { continue };
         match can.transmit(&frame) {
