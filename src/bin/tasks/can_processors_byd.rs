@@ -43,7 +43,9 @@ pub async fn inverter_rx() -> ! {
         let charge_current = bmsdata.charge_max.to_le_bytes();
         let discharge_current = bmsdata.discharge_max.to_le_bytes();
         let soc = bmsdata.kwh_remaining.to_le_bytes();
-
+        #[cfg(feature = "v65")]
+        let pack_volts = (bmsdata.pack_volts / 6).to_le_bytes();
+        #[cfg(not(feature = "v65"))]
         let pack_volts = bmsdata.pack_volts.to_le_bytes();
         let current = bmsdata.current.to_le_bytes();
         let temp = bmsdata.temp_avg.to_le_bytes();

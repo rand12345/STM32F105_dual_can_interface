@@ -80,7 +80,7 @@ async fn main(spawner: Spawner) {
 
     defmt::unwrap!(spawner.spawn(bms_rx()));
 
-    // defmt::unwrap!(spawner.spawn(inverter_rx()));  // switched off whilst debugging BMS
+    defmt::unwrap!(spawner.spawn(inverter_rx()));  // switched off whilst debugging BMS
 
     defmt::unwrap!(spawner.spawn(bms_tx_periodic()));
 

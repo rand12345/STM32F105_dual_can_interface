@@ -14,7 +14,8 @@ name = "integration"
 harness = false
 
 [features]
-default = ["defmt", "kangoo_battery","byd", "ze50"] #"kangoo"] # "solax" # "pylontech"
+default = ["defmt", "kangoo_battery","byd", "ze50", "v65"] #"kangoo"] # "solax" # "pylontech"
+v65 = []
 defmt = []
 byd = []
 # pylontech = ["dep:pylontech_protocol"]

@@ -115,7 +115,7 @@ pub async fn bms_task(mut can: Can<'static, CAN1>) {
             // defmt::println!("BMS: Rx {:?}", frame);
             // if let embassy_stm32::can::bxcan::Id::Extended(id) = frame.id() {
             // if id.as_raw() == 0x18DAF1DB {
-            defmt::info!("BMS>>STM {:?}", Debug2Format(&(frame.id(), frame.data())));
+            // defmt::info!("BMS>>STM {:?}", Debug2Format(&(frame.id(), frame.data())));
             rx.send(frame).await;
             // };
             // }
@@ -123,7 +123,7 @@ pub async fn bms_task(mut can: Can<'static, CAN1>) {
         let Ok(frame) = tx.try_recv() else { continue };
         match can.transmit(&frame) {
             Ok(_) => {
-                defmt::info!("STM>>BMS: {}", Debug2Format(&(frame.id(), frame.data())));
+                // defmt::info!("STM>>BMS: {}", Debug2Format(&(frame.id(), frame.data())));
 
                 while !can.is_transmitter_idle() {
                     yield_now().await
