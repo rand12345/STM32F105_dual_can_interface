@@ -21,33 +21,9 @@ pub async fn inverter_task(mut can: Can<'static, CAN2>) {
         .enable();
     warn!("Starting Inverter Can2");
 
-    // #[cfg(feature = "solax")]
-    // let canid = |frame: &Frame| -> u32 {
-    //     if let Extended(id) = frame.id() {
-    //         id.as_raw()
-    //     } else {
-    //         0
-    //     }
-    // };
-
-    // #[cfg(feature = "pylontech")]
-    // let canid = |frame: &Frame| -> u16 {
-    //     if let Standard(id) = frame.id() {
-    //         id.as_raw()
-    //     } else {
-    //         0
-    //     }
-    // };
-
     loop {
         yield_now().await;
         if let Ok(frame) = can.receive() {
-            // #[cfg(feature = "solax")]
-            // if canid(&frame) == 0x1871 {
-            //     rx.send(frame).await
-            // };
-
-            // #[cfg(feature = "pylontech")]
             rx.send(frame).await
         };
         let Ok(frame) = tx.try_recv() else { continue };
@@ -101,20 +77,11 @@ pub async fn bms_task(mut can: Can<'static, CAN1>) {
 
     let rx = BMS_CHANNEL_RX.sender();
     let tx = BMS_CHANNEL_TX.receiver();
-    // let canid = |frame: &Frame| -> u16 {
-    //     match frame.id() {
-    //         Standard(id) => id.as_raw(),
-    //         Id::Extended(_) => 0,
-    //     }
-    // };
 
     loop {
         // WDT.signal(true); // temp whilst testing
         yield_now().await;
         if let Ok(frame) = can.receive() {
-            // defmt::println!("BMS: Rx {:?}", frame);
-            // if let embassy_stm32::can::bxcan::Id::Extended(id) = frame.id() {
-            // if id.as_raw() == 0x18DAF1DB {
             // defmt::info!("BMS>>STM {:?}", Debug2Format(&(frame.id(), frame.data())));
             rx.send(frame).await;
             // };
