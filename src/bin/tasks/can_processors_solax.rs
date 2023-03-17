@@ -25,9 +25,9 @@ pub async fn inverter_rx() -> ! {
     loop {
         let frame = recv.recv().await;
         inverter_comms_valid = false;
-        if canid(&frame) == 0x1871 {
-            rx.send(frame).await
-        };
+        // if canid(&frame) == 0x1871 {
+        //     rx.send(frame).await
+        // };
 
         if LAST_BMS_MESSAGE.lock().await.elapsed().as_secs() > LAST_READING_TIMEOUT_SECS {
             error!("BMS last update timeout, inverter communications stopped");

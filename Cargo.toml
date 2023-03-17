@@ -14,15 +14,15 @@ name = "integration"
 harness = false
 
 [features]
-default = ["defmt", "kangoo_battery","byd", "tesla_m3", "v65"] #"kangoo"] # "solax" # "pylontech"
-v65 = []
+default = ["defmt", "kangoo_battery","solax", "tesla_m3"] #"kangoo"] # "solax" # "pylontech"
+# v65 = []
 defmt = []
-byd = []
+# byd = []
 tesla_m3 = []
 # pylontech = ["dep:pylontech_protocol"]
 # ze50 = ["dep:renault_zoe_ph2_battery"]
 # kangoo = ["dep:kangoo_battery"]
-# solax = ["dep:solax_can_bus"]
+solax = ["dep:solax_can_bus"]
 # kangoo_battery = ["dep:kangoo_battery"]
 
 [dependencies]

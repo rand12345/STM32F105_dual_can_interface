@@ -252,6 +252,7 @@ pub async fn bms_rx() {
         }
 
         if rx_check == 0xF {
+            rx_check = 0;
             let update = |mut bms: Bms| -> Result<(), BmsError> {
                 bms.set_valid(false);
                 bms.update_pack_volts(data.pack_volts)?;
