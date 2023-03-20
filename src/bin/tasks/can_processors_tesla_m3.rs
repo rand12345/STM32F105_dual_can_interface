@@ -91,8 +91,8 @@ pub async fn bms_rx() {
         match id {
             0x132 => {
                 rx_check |= 1; // set internal read status high
-                data.pack_volts = u16::from_le_bytes([payload[0], payload[1]]);
-                data.current_value = i16::from_le_bytes([payload[2], payload[3]]) as i32;
+                data.pack_volts = u16::from_le_bytes([payload[0], payload[1]]).into();
+                data.current_value = i16::from_le_bytes([payload[2], payload[3]]).into();
                 info!("data.pack_volts: {}", data.pack_volts);
                 info!("data.current_value: {}", data.current_value);
             }
@@ -102,14 +102,14 @@ pub async fn bms_rx() {
                 let mux = payload[0] & 0x03;
                 match mux {
                     0 => {
-                        let _cell_volts_min = (u16::from_le_bytes([payload[0], payload[1]]) >> 2
+                        data.v_low_cell = (u16::from_le_bytes([payload[0], payload[1]]) >> 2
                             & 0xFFF)
                             .saturating_div(500);
-                        let _cell_volts_max = (u16::from_le_bytes([payload[2], payload[3]]) >> 2
+                        data.v_high_cell = (u16::from_le_bytes([payload[2], payload[3]]) >> 2
                             & 0xFFF)
                             .saturating_div(500);
-                        info!("_cell_volts_min: {}", _cell_volts_min);
-                        info!("_cell_volts_max: {}", _cell_volts_max);
+                        info!("_cell_volts_min: {}", data.v_low_cell);
+                        info!("_cell_volts_max: {}", data.v_high_cell);
                     }
                     1 => {
                         data.temp_max = (payload[2] - 40) as i16 * 10;
@@ -121,17 +121,20 @@ pub async fn bms_rx() {
             0x401 => {
                 rx_check |= 1 << 2; // set internal read status high
                 let mux = payload[0] as usize;
-                let mut cell = [0u16; 256];
                 if payload[1] == 0x02a {
-                    cell[1 + mux * 3] =
+                    if 1 + mux * 3 > data.cell_volts.len() {
+                        error!("Cell volts mux address {} > allocated cells", 1 + mux * 3);
+                        continue;
+                    }
+                    data.cell_volts[1 + mux * 3] =
                         u16::from_le_bytes([payload[2], payload[3]]).saturating_div(10000);
-                    info!("Cell{} : {}", (1 + mux) * 3, cell[1 + mux * 3]);
-                    cell[2 + mux * 3] =
+                    info!("Cell{} : {}", (1 + mux) * 3, data.cell_volts[1 + mux * 3]);
+                    data.cell_volts[2 + mux * 3] =
                         u16::from_le_bytes([payload[4], payload[5]]).saturating_div(10000);
-                    info!("Cell{} : {}", (2 + mux) * 3, cell[1 + mux * 3]);
-                    cell[3 + mux * 3] =
+                    info!("Cell{} : {}", (2 + mux) * 3, data.cell_volts[1 + mux * 3]);
+                    data.cell_volts[3 + mux * 3] =
                         u16::from_le_bytes([payload[6], payload[7]]).saturating_div(10000);
-                    info!("Cell{} : {}", (3 + mux) * 3, cell[1 + mux * 3]);
+                    info!("Cell{} : {}", (3 + mux) * 3, data.cell_volts[1 + mux * 3]);
                 }
             }
             0x352 => {
@@ -143,6 +146,7 @@ pub async fn bms_rx() {
                 let bits = u64::from_le_bytes(payload[..8].try_into().unwrap());
                 let expected_energy_remaining = ((bits >> 22) as u16 & 0x7FF).saturating_div(10);
                 let nominal_full_pack_energy = ((bits & 0x7FF) as u16).saturating_div(10);
+                data.kwh_remaining = expected_energy_remaining;
                 data.soc_value =
                     expected_energy_remaining.saturating_div(nominal_full_pack_energy) * 100;
                 info!("data.soc_value: {}", data.soc_value);
@@ -255,127 +259,67 @@ pub async fn bms_rx() {
             rx_check = 0;
             let update = |mut bms: Bms| -> Result<(), BmsError> {
                 bms.set_valid(false);
-                bms.update_pack_volts(data.pack_volts)?;
-                bms.update_current(data.current_value)?;
-                bms.update_kwh(data.kwh_remaining);
-                bms.update_soc(data.soc_value)?;
-                bms.set_valid(true);
+                bms.update_pack_volts(data.pack_volts)?
+                    .update_current(data.current_value)?
+                    .update_cell_mv_low_high(data.v_low_cell, data.v_high_cell)?
+                    .update_temps(data.temp_max, data.temp_max)?
+                    .update_pack_temp(data.temp_max as f32)?
+                    .update_kwh(data.kwh_remaining)
+                    .update_soc(data.soc_value)?
+                    .set_valid(true);
 
                 Ok(())
             };
             *LAST_BMS_MESSAGE.lock().await = Instant::now();
             info!("BMS watchdog reset");
             let bms = BMS.lock().await;
-            if let Err(_e) = update(*bms) {
-                error!("BMS update failed");
+            if let Err(e) = update(*bms) {
+                error!("BMS update failed: {}", defmt::Debug2Format(&e));
             } else {
-                info!("BMS updated")
-                // push_bms_to_inverter(bms)
+                info!("BMS updated");
+                // push_bms_to_inverter(*bms).await
             };
         }
     }
 }
+/* To be made an inverter responsibilitiy */
+// #[cfg(feature = "solax")]
+// #[inline]
+// async fn push_bms_to_inverter(bmsdata: bms_standard::Bms) {
+// let mut inverter_data = INVERTER_DATA.lock().await;
+// // convert everything to standard units, volts, millivolts, etc
+// inverter_data.pack_voltage_max = bmsdata.get_pack_voltage_max();
+// inverter_data.slave_voltage_max = bmsdata.slave_voltage_max as f32 * 0.1;
+// inverter_data.slave_voltage_min = bmsdata.slave_voltage_min as f32 * 0.1;
+// inverter_data.charge_max = bmsdata.charge_max as f32 * 0.1;
+// inverter_data.discharge_max = bmsdata.discharge_max as f32 * 0.1;
+// inverter_data.voltage = bmsdata.pack_volts as f32 * 0.1;
+// inverter_data.current = bmsdata.current as f32 * 0.1; // 100mA = 1
+// inverter_data.capacity = bmsdata.soc as u16;
+// inverter_data.kwh = bmsdata.kwh_remaining as f32 * 0.1;
+// inverter_data.cell_temp_min = bmsdata.temp_min as f32 * 0.1;
+// inverter_data.cell_temp_max = bmsdata.temp_max as f32 * 0.1;
+// inverter_data.int_temp = bmsdata.temp_avg as f32 * 0.1;
+// inverter_data.cell_voltage_min = bmsdata.min_volts; //cell as millivolts
+// inverter_data.cell_voltage_max = bmsdata.max_volts;
+// inverter_data.wh_total = 10000;
+// inverter_data.contactor = true;
+// inverter_data.v_max = bmsdata.max_volts as f32; // cell as millivolts
+// inverter_data.v_min = bmsdata.min_volts as f32;
+// inverter_data.valid = bmsdata.valid;
+// solax_data.timestamp = Some(Instant::now());
+// }
 
-#[cfg(feature = "solax")]
-#[inline]
-async fn push_bms_to_inverter(bmsdata: kangoo_battery::Bms) {
-    let mut inverter_data = INVERTER_DATA.lock().await;
-    // convert everything to standard units, volts, millivolts, etc
-    inverter_data.pack_voltage_max = bmsdata.pack_voltage_max as f32 * 0.1;
-    inverter_data.slave_voltage_max = bmsdata.slave_voltage_max as f32 * 0.1;
-    inverter_data.slave_voltage_min = bmsdata.slave_voltage_min as f32 * 0.1;
-    inverter_data.charge_max = bmsdata.charge_max as f32 * 0.1;
-    inverter_data.discharge_max = bmsdata.discharge_max as f32 * 0.1;
-    inverter_data.voltage = bmsdata.pack_volts as f32 * 0.1;
-    inverter_data.current = bmsdata.current as f32 * 0.1; // 100mA = 1
-    inverter_data.capacity = bmsdata.soc as u16;
-    inverter_data.kwh = bmsdata.kwh_remaining as f32 * 0.1;
-    inverter_data.cell_temp_min = bmsdata.temp_min as f32 * 0.1;
-    inverter_data.cell_temp_max = bmsdata.temp_max as f32 * 0.1;
-    inverter_data.int_temp = bmsdata.temp_avg as f32 * 0.1;
-    inverter_data.cell_voltage_min = bmsdata.min_volts; //cell as millivolts
-    inverter_data.cell_voltage_max = bmsdata.max_volts;
-    inverter_data.wh_total = 10000;
-    inverter_data.contactor = true;
-    inverter_data.v_max = bmsdata.max_volts as f32; // cell as millivolts
-    inverter_data.v_min = bmsdata.min_volts as f32;
-    inverter_data.valid = bmsdata.valid;
-    // solax_data.timestamp = Some(Instant::now());
-}
-#[cfg(feature = "pylontech")]
-#[inline]
-async fn push_bms_to_inverter(bmsdata: renault_zoe_ph2_battery::bms::Bms) {
-    let mut inverter_data = INVERTER_DATA.lock().await;
-    // convert everything to standard units, volts, millivolts, etc
-    inverter_data.pack_voltage_max = bmsdata.pack_voltage_max as f32 * 0.1;
-    inverter_data.charge_voltage_max = bmsdata.slave_voltage_max as f32 * 0.1;
-    inverter_data.charge_voltage_min = bmsdata.slave_voltage_min as f32 * 0.1;
-    inverter_data.charge_max = bmsdata.charge_max as f32 * 0.1;
-    inverter_data.discharge_max = bmsdata.discharge_max as f32 * 0.1;
-    inverter_data.voltage = bmsdata.pack_volts as f32 * 0.1;
-    inverter_data.current = bmsdata.current as f32 * 0.1; // 100mA = 1
-    inverter_data.capacity = bmsdata.soc as u16;
-    inverter_data.kwh = bmsdata.kwh_remaining as f32 * 0.1;
-    inverter_data.int_temp = bmsdata.temp_avg as f32 * 0.1;
-    inverter_data.wh_total = 10000;
-    inverter_data.contactor = true;
-    inverter_data.v_max = bmsdata.max_volts as f32; // cell as millivolts
-    inverter_data.v_min = bmsdata.min_volts as f32;
-    inverter_data.valid = bmsdata.valid;
-    // solax_data.timestamp = Some(Instant::now());
-    // MQTTFMT.lock().await.update(bmsdata);  <- bat type NEED TO STANDARDISE THE BMS STRUCT!
-}
-/*
-#[cfg(feature = "byd")]
-#[inline]
-async fn push_bms_to_inverter(bmsdata: renault_zoe_ph2_battery::bms::Bms) {
-    // BYD struct not yet implemented
-
-    // let mut inverter_data = INVERTER_DATA.lock().await;
-    // // convert everything to standard units, volts, millivolts, etc
-    // inverter_data.pack_voltage_max = bmsdata.pack_voltage_max as f32 * 0.1;
-    // inverter_data.charge_voltage_max = bmsdata.slave_voltage_max as f32 * 0.1;
-    // inverter_data.charge_voltage_min = bmsdata.slave_voltage_min as f32 * 0.1;
-    // inverter_data.charge_max = bmsdata.charge_max as f32 * 0.1;
-    // inverter_data.discharge_max = bmsdata.discharge_max as f32 * 0.1;
-    // inverter_data.voltage = bmsdata.pack_volts as f32 * 0.1;
-    // inverter_data.current = bmsdata.current as f32 * 0.1; // 100mA = 1
-    // inverter_data.capacity = bmsdata.soc as u16;
-    // inverter_data.kwh = bmsdata.kwh_remaining as f32 * 0.1;
-    // inverter_data.int_temp = bmsdata.temp_avg as f32 * 0.1;
-    // inverter_data.wh_total = 10000;
-    // inverter_data.contactor = true;
-    // inverter_data.v_max = bmsdata.max_volts as f32; // cell as millivolts
-    // inverter_data.v_min = bmsdata.min_volts as f32;
-    // inverter_data.valid = bmsdata.valid;
-    // solax_data.timestamp = Some(Instant::now());
-    // MQTTFMT.lock().await.update(bmsdata);
-    // let config = CONFIG.lock().await;
-    // bmsdata.set_dod(config.dod.min(), config.dod.max());
-}
-
-#[inline]
-async fn push_all_to_mqtt(bmsdata: kangoo_battery::Bms) {
-    MQTTFMT.lock().await.update(bmsdata);
-}
-
-#[inline]
-async fn update_dod(bmsdata: &mut kangoo_battery::Bms) {
-    let config = CONFIG.lock().await;
-    bmsdata.set_dod(config.dod.min(), config.dod.max());
-}
-*/
 #[derive(Debug)]
 pub struct Data {
     pub cell_volts: [u16; 96],
     pub cell_bal: [bool; 96],
     pub soc_value: u16,
-    current_offset: u16,
-    pub current_value: i32, // 10 = 1A, 1=0.1A
+    pub current_value: f32, // 10 = 1A, 1=0.1A
     pub max_charge_amps: u16,
     pub kwh_remaining: u16,
     pub pack_temp: i16,
-    pub pack_volts: u16, // 4000 = 400.0V
+    pub pack_volts: f32, // 4000 = 400.0V
     // pub mode: BMSStatus,
     // pub req_mode: BattFunctions,
     pub req_code: u8,
@@ -394,12 +338,12 @@ impl Data {
             cell_volts: [0; 96],
             cell_bal: [false; 96],
             soc_value: 0,
-            current_offset: 0,
-            current_value: 0,
+            // current_offset: 0,
+            current_value: 0.0,
             max_charge_amps: 0,
             kwh_remaining: 0,
             pack_temp: 0,
-            pack_volts: 0,
+            pack_volts: 0.0,
             // mode: BMSStatus::Offline,
             // req_mode: BattFunctions::Soc,
             req_code: 1,

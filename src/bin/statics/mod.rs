@@ -19,11 +19,12 @@ lazy_static! {
     pub static ref CONTACTOR_STATE: Status = Signal::new();
     pub static ref SEND_MQTT: Status = Signal::new();
     pub static ref MQTTFMT: MqttFmtMutex = embassy_sync::mutex::Mutex::new(MqttFormat::default());
-
-
-
     pub static ref CONFIG: ConfigType = embassy_sync::mutex::Mutex::new(Config::default());
+    pub static ref BMS: BmsType =
+        embassy_sync::mutex::Mutex::new(bms_standard::Bms::new(bms_standard::Config::default()));
 }
+
+/* */
 #[cfg(feature = "solax")]
 lazy_static! {
     pub static ref INVERTER_DATA: InverterDataMutex =
@@ -58,11 +59,10 @@ lazy_static! {
 
 #[cfg(feature = "tesla_m3")]
 lazy_static! {
-    pub static ref BMS_DATA: Ze50DataMutex =
+    pub static ref BMS_DATA: TeslaM3DataMutex =
         embassy_sync::mutex::Mutex::new(crate::tasks::can_processors_tesla_m3::Data::new());
-    pub static ref BMS: Ze50BmsMutex =
-        embassy_sync::mutex::Mutex::new(bms_standard::Bms::new(bms_standard::Config::default()));
 }
+
 // pub const BITTIMINGS: u32 = 0x001c0000; // 500kps @ 8MHz // config.rcc.sys_ck = Some(mhz(64)); config.rcc.pclk1 = Some(mhz(24)); << experimental >>
 pub const BITTIMINGS: u32 = 0x00050007; // 500kps @ 32Mhz // config.rcc.sys_ck = Some(mhz(64)); config.rcc.pclk1 = Some(mhz(24)); << experimental >>
                                         // pub const BITTIMINGS: u32 = 0x00050005; // 500kps @ 24Mhz
