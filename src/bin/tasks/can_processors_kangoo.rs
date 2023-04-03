@@ -1,8 +1,6 @@
 use crate::statics::*;
-use defmt::error;
-use defmt::info;
-use defmt::warn;
-use defmt::Debug2Format;
+use bms_standard::Bms;
+use defmt::{error, warn};
 use embassy_stm32::can::bxcan::Frame;
 
 #[cfg(feature = "kangoo")]
@@ -36,16 +34,14 @@ pub async fn bms_tx_periodic() {
 #[cfg(feature = "kangoo")]
 #[embassy_executor::task]
 pub async fn bms_rx() {
+    use bms_standard::MinMax;
     use embassy_stm32::can::bxcan::Id;
     use embassy_stm32::can::bxcan::Id::Standard;
     use embassy_time::Instant;
-    use kangoo_battery::bms::Bms;
 
     let rx = BMS_CHANNEL_RX.receiver();
     let tx = BMS_CHANNEL_TX.sender();
-    let mut bms_validated = Bms::new();
     let mut data = kangoo_battery::Data::new();
-    let mut update_inverter = false;
     warn!("Starting Kangoo Rx Processor");
     let canid = |frame: &Frame| -> Option<u16> {
         match frame.id() {
@@ -60,108 +56,99 @@ pub async fn bms_rx() {
             Some(id) => id,
             None => continue,
         };
-
-        // warn!("{}: {:?}", id, Debug2Format(&frame.data()));
         if ![0x155, 0x424, 0x425, 0x4ae, 0x7bb].contains(&id) {
             continue; // filter unwanted frames
         }
-        // if !id == 0x7bb { // weird rust bug on nightly?
         if id != 1979 {
-            update_inverter = match data.rapid_data_processor(frame) {
+            let update_inverter = match data.rapid_data_processor(frame) {
                 Ok(state) => state, // data can be parsed without diag data is true - use a different validity checker
-                Err(_e) => {
-                    warn!("Rapid data parsing error"); //: {:?}", Debug2Format(&e));
+                Err(e) => {
+                    warn!("Rapid data parsing error: {}", e); //: {:?}", Debug2Format(&e));
                     continue;
                 }
             };
             if update_inverter {
-                *LAST_BMS_MESSAGE.lock().await = Instant::now();
-                info!("BMS watchdog reset")
+                {
+                    // change to BMS wdt and signal update
+                    *LAST_BMS_MESSAGE.lock().await = Some(Instant::now());
+                }
+                let c = async || {
+                    // remove async, not bubbling errors
+                    let mut bmsdata = BMS.lock().await;
+                    bmsdata.cell_mv = data.cells_mv;
+                    bmsdata.cell_range_mv = data.cell_mv;
+                    bmsdata.pack_volts = data.pack_volts;
+                    bmsdata.kwh_remaining = data.kwh_remaining;
+                    bmsdata.soc = data.soc_value as f32;
+                    bmsdata.temp = data.pack_temp;
+                    bmsdata.temps =
+                        MinMax::new(*data.temp.minimum() as f32, *data.temp.maximum() as f32);
+                    bmsdata
+                        .set_valid(true)?
+                        .update_current(data.current_value)?
+                        .update_soc(data.soc_value)?
+                        .update_kwh(data.kwh_remaining)?
+                        .update_max_charge_amps(data.max_charge_amps)?
+                        .update_pack_volts(data.pack_volts)?
+                        .set_pack_temp(data.pack_temp)?
+                        .throttle_pack()
+                };
+                match c().await {
+                    Ok(bms) => {
+                        push_all_to_mqtt(bms).await;
+                        update_dod(bms).await;
+                    }
+                    Err(e) => error!("Rapid data update error: {}", e),
+                };
             }
         } else {
             match data.diag_data_processor(frame) {
                 Ok(None) => {
-                    if let Err(_e) = bms_validated.update_bms_data(&data) {
-                        warn!("BMS data update error"); //: {:?}", Debug2Format(&e));
+                    WDT.signal(true); // temp whilst testing
+                    {
+                        *LAST_BMS_MESSAGE.lock().await = Some(Instant::now());
                     }
+                    let c = async || {
+                        let mut bmsdata = BMS.lock().await;
+                        bmsdata.bal_cells = data.bal_cells;
+                        bmsdata
+                            .set_valid(true)?
+                            .set_cell_mv_low_high(*data.cell_mv.minimum(), *data.cell_mv.maximum())?
+                            .update_pack_volts(data.pack_volts)?
+                            .set_temps(*data.temp.minimum(), *data.temp.maximum())?
+                            .throttle_pack()
+                    };
+                    match c().await {
+                        Ok(bms) => {
+                            push_all_to_mqtt(bms).await;
+                            update_dod(bms).await;
+                        }
+                        Err(e) => error!("Diag update error: {}", e),
+                    };
                 }
+
                 Ok(Some(next_tx_frame)) => {
                     tx.send(next_tx_frame).await;
                     continue;
                 }
                 Err(e) => {
-                    warn!("BMS diag error: {:?}", Debug2Format(&e));
+                    error!("BMS diag error: {:?}", e);
                 }
             };
         }
-
-        if update_inverter {
-            push_bms_to_inverter(bms_validated).await;
-            info!("Pushed values to Inverter data store");
-            push_all_to_mqtt(bms_validated).await;
-            info!("Push values to MQTT data store");
-            update_dod(&mut bms_validated).await;
-        }
-        update_inverter = false;
     }
 }
 
-#[cfg(feature = "solax")]
 #[inline]
-async fn push_bms_to_inverter(bmsdata: kangoo_battery::Bms) {
-    let mut inverter_data = INVERTER_DATA.lock().await;
-    // convert everything to standard units, volts, millivolts, etc
-    inverter_data.pack_voltage_max = bmsdata.pack_voltage_max as f32 * 0.1;
-    inverter_data.slave_voltage_max = bmsdata.slave_voltage_max as f32 * 0.1;
-    inverter_data.slave_voltage_min = bmsdata.slave_voltage_min as f32 * 0.1;
-    inverter_data.charge_max = bmsdata.charge_max as f32 * 0.1;
-    inverter_data.discharge_max = bmsdata.discharge_max as f32 * 0.1;
-    inverter_data.voltage = bmsdata.pack_volts as f32 * 0.1;
-    inverter_data.current = bmsdata.current as f32 * 0.1; // 100mA = 1
-    inverter_data.capacity = bmsdata.soc as u16;
-    inverter_data.kwh = bmsdata.kwh_remaining as f32 * 0.1;
-    inverter_data.cell_temp_min = bmsdata.temp_min as f32 * 0.1;
-    inverter_data.cell_temp_max = bmsdata.temp_max as f32 * 0.1;
-    inverter_data.int_temp = bmsdata.temp_avg as f32 * 0.1;
-    inverter_data.cell_voltage_min = bmsdata.min_volts; //cell as millivolts
-    inverter_data.cell_voltage_max = bmsdata.max_volts;
-    inverter_data.wh_total = 10000;
-    inverter_data.contactor = true;
-    inverter_data.v_max = bmsdata.max_volts as f32; // cell as millivolts
-    inverter_data.v_min = bmsdata.min_volts as f32;
-    inverter_data.valid = bmsdata.valid;
-    // solax_data.timestamp = Some(Instant::now());
-}
-#[cfg(feature = "pylontech")]
-#[inline]
-async fn push_bms_to_inverter(bmsdata: kangoo_battery::Bms) {
-    let mut inverter_data = INVERTER_DATA.lock().await;
-    // convert everything to standard units, volts, millivolts, etc
-    inverter_data.pack_voltage_max = bmsdata.pack_voltage_max as f32 * 0.1;
-    inverter_data.charge_voltage_max = bmsdata.slave_voltage_max as f32 * 0.1;
-    inverter_data.charge_voltage_min = bmsdata.slave_voltage_min as f32 * 0.1;
-    inverter_data.charge_max = bmsdata.charge_max as f32 * 0.1;
-    inverter_data.discharge_max = bmsdata.discharge_max as f32 * 0.1;
-    inverter_data.voltage = bmsdata.pack_volts as f32 * 0.1;
-    inverter_data.current = bmsdata.current as f32 * 0.1; // 100mA = 1
-    inverter_data.capacity = bmsdata.soc as u16;
-    inverter_data.kwh = bmsdata.kwh_remaining as f32 * 0.1;
-    inverter_data.int_temp = bmsdata.temp_avg as f32 * 0.1;
-    inverter_data.wh_total = 10000;
-    inverter_data.contactor = true;
-    inverter_data.v_max = bmsdata.max_volts as f32; // cell as millivolts
-    inverter_data.v_min = bmsdata.min_volts as f32;
-    inverter_data.valid = bmsdata.valid;
-    // solax_data.timestamp = Some(Instant::now());
+async fn push_all_to_mqtt(bms: Bms) {
+    MQTTFMT.lock().await.update(bms);
 }
 
 #[inline]
-async fn push_all_to_mqtt(bmsdata: kangoo_battery::Bms) {
-    MQTTFMT.lock().await.update(bmsdata);
-}
-
-#[inline]
-async fn update_dod(bmsdata: &mut kangoo_battery::Bms) {
+async fn update_dod(bms: Bms) {
     let config = CONFIG.lock().await;
-    bmsdata.set_dod(config.dod.min(), config.dod.max());
+    let mut bmsmut = bms;
+    if let Err(e) = bmsmut.set_dod(config.dod.min(), config.dod.max()) {
+        error!("{}", e)
+    }
 }

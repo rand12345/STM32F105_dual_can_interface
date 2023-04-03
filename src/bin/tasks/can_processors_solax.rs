@@ -1,14 +1,12 @@
 use crate::statics::*;
-use defmt::error;
-use defmt::info;
-use defmt::warn;
-use defmt::Debug2Format;
+use defmt::{error, info, warn};
 use embassy_stm32::can::bxcan::Frame;
 
 #[allow(unused_assignments)]
 #[embassy_executor::task]
 pub async fn inverter_rx() -> ! {
     use embassy_stm32::can::bxcan::Id::*;
+    use solax_can_bus::SolaxError::*;
     warn!("Starting Inverter Processor");
     let mut inverter_comms_valid = false;
 
@@ -29,15 +27,22 @@ pub async fn inverter_rx() -> ! {
             continue;
         };
         inverter_comms_valid = false;
-        if LAST_BMS_MESSAGE.lock().await.elapsed().as_secs() > LAST_READING_TIMEOUT_SECS {
-            error!("BMS last update timeout, inverter communications stopped");
-            CONTACTOR_STATE.signal(inverter_comms_valid);
-            continue;
-        };
+        {
+            // need to init bms time starting with timeout
+            if let Some(time) = *LAST_BMS_MESSAGE.lock().await {
+                if time.elapsed().as_secs() > LAST_READING_TIMEOUT_SECS {
+                    error!("BMS last update timeout, inverter communications stopped");
+                    CONTACTOR_STATE.signal(inverter_comms_valid);
+                    continue;
+                };
+            };
+        }
 
         let response = {
             let mut solax = INVERTER_DATA.lock().await;
-            solax.parser(frame)
+            let bms = BMS.lock().await;
+            info!("BMS data: {:#}", *bms);
+            solax.parser(frame, &bms, true) // add missing options
         };
 
         inverter_comms_valid = match response {
@@ -52,32 +57,18 @@ pub async fn inverter_rx() -> ! {
             }
             Err(e) => {
                 match e {
-                    solax_can_bus::SolaxError::InvalidData => {
-                        error!("Invalid data");
-                        warn!(
-                            "Inverter data: {:?}",
-                            Debug2Format(&*INVERTER_DATA.lock().await)
-                        );
-                        true
-                    }
-                    solax_can_bus::SolaxError::BadId(id) => {
-                        error!("Critical: unexpected frame in inverter can data {:02x}", id);
-                        false // disable contactor
-                    }
-                    solax_can_bus::SolaxError::InvalidFrameEncode(id) => {
+                    InvalidFrameEncode(id) => {
                         error!("Critical: frame encoding failed for {:02x}", id);
                         false // disable contactor
                     }
-                    solax_can_bus::SolaxError::TimeStamp(time) => {
-                        info!("Inverter time: {}", time);
+                    BadId(id) => {
+                        error!("Critical: unexpected frame in inverter can data {:02x}", id);
+                        false // disable contactor
+                    }
+                    x => {
+                        warn!("{}", x);
                         true
                     }
-                    solax_can_bus::SolaxError::InvalidTimeData => {
-                        warn!("InvalidTimeData");
-                        true // not critical
-                    }
-                    solax_can_bus::SolaxError::UnwantedFrame => true,
-                    // _ => true,
                 }
             }
         };

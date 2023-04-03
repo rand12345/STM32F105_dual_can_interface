@@ -1,9 +1,7 @@
 #![no_std]
 #![no_main]
 #![feature(type_alias_impl_trait)]
-// #![feature(alloc_error_handler)]
-// #![feature(generators)]
-// #![feature(async_closure)]
+#![feature(async_closure)]
 #![feature(error_in_core)]
 
 use defmt::debug;
@@ -18,6 +16,7 @@ mod errors;
 mod statics;
 mod tasks;
 mod types;
+mod wdt;
 
 #[global_allocator]
 static HEAP: Heap = Heap::empty();
@@ -91,6 +90,5 @@ async fn main(spawner: Spawner) {
     defmt::unwrap!(spawner.spawn(crate::tasks::can_interfaces::bms_task(can1)));
     defmt::unwrap!(spawner.spawn(crate::tasks::can_interfaces::inverter_task(can2)));
 
-    // defmt::unwrap!(spawner.spawn(crate::wdt::init(p.IWDG, 10000000))); // 10 seconds WDT OFF WHILST TESTING
-    // defmt::unwrap!(spawner.spawn(crate::async_tasks::one_sec_periodic())); // e_t::Timer test
+    defmt::unwrap!(spawner.spawn(crate::wdt::init(p.IWDG, 20000000))); // 20 seconds WDT  WHILST TESTING
 }

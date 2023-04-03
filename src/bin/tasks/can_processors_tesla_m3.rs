@@ -259,14 +259,14 @@ pub async fn bms_rx() {
             rx_check = 0;
             let update = |mut bms: Bms| -> Result<(), BmsError> {
                 bms.set_valid(false);
-                bms.update_pack_volts(data.pack_volts)?
-                    .update_current(data.current_value)?
-                    .update_cell_mv_low_high(data.v_low_cell, data.v_high_cell)?
-                    .update_temps(data.temp_max, data.temp_max)?
-                    .update_pack_temp(data.temp_max as f32)?
-                    .update_kwh(data.kwh_remaining)
-                    .update_soc(data.soc_value)?
-                    .set_valid(true);
+                bms.update_pack_volts(data.pack_volts)?;
+                // .update_current(data.current_value)?
+                // .update_cell_mv_low_high(data.v_low_cell, data.v_high_cell)?
+                // .update_temps(data.temp_max, data.temp_max)?
+                // .update_pack_temp(data.temp_max as f32)?
+                // .update_kwh(data.kwh_remaining)
+                // .update_soc(data.soc_value)?
+                // .set_valid(true);
 
                 Ok(())
             };

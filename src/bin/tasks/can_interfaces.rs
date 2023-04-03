@@ -1,5 +1,5 @@
 use crate::statics::*;
-use defmt::{warn, Debug2Format};
+use defmt::warn;
 use embassy_futures::yield_now;
 use embassy_stm32::can::{bxcan::*, Can};
 use embassy_stm32::peripherals::*;
@@ -9,7 +9,6 @@ use nb::Error::*;
 pub async fn inverter_task(mut can: Can<'static, CAN2>) {
     let rx = INVERTER_CHANNEL_RX.sender();
     let tx = INVERTER_CHANNEL_TX.receiver();
-    // use embassy_stm32::can::bxcan::Id::*;
     // Wait for Can1 to initalise
     CAN_READY.wait().await;
 
@@ -17,7 +16,6 @@ pub async fn inverter_task(mut can: Can<'static, CAN2>) {
         .set_bit_timing(BITTIMINGS) // http://www.bittiming.can-wiki.info/
         .set_loopback(false) // Receive own frames
         .set_silent(false)
-        // .set_automatic_retransmit(false)
         .enable();
     warn!("Starting Inverter Can2");
 
@@ -27,9 +25,9 @@ pub async fn inverter_task(mut can: Can<'static, CAN2>) {
             rx.send(frame).await
         };
         let Ok(frame) = tx.try_recv() else { continue };
+
         match can.transmit(&frame) {
             Ok(_) => {
-                defmt::info!("Inv Tx: {}", Debug2Format(&(frame.id(), frame.data())));
                 while !can.is_transmitter_idle() {
                     yield_now().await
                 }
@@ -79,19 +77,13 @@ pub async fn bms_task(mut can: Can<'static, CAN1>) {
     let tx = BMS_CHANNEL_TX.receiver();
 
     loop {
-        // WDT.signal(true); // temp whilst testing
         yield_now().await;
         if let Ok(frame) = can.receive() {
-            // defmt::info!("BMS>>STM {:?}", Debug2Format(&(frame.id(), frame.data())));
             rx.send(frame).await;
-            // };
-            // }
         };
         let Ok(frame) = tx.try_recv() else { continue };
         match can.transmit(&frame) {
             Ok(_) => {
-                // defmt::info!("STM>>BMS: {}", Debug2Format(&(frame.id(), frame.data())));
-
                 while !can.is_transmitter_idle() {
                     yield_now().await
                 }

@@ -23,7 +23,16 @@ pub async fn uart_task(uart: Uart<'static, USART3, DMA1_CH2, DMA1_CH3>) {
                 Ok(len) => {
                     let mut config = CONFIG.lock().await;
                     if let Err(e) = config.update_from_json(&buf[..len]) {
-                        error!("UART deserialise bytes error {}", Debug2Format(&e))
+                        let message = if let Ok(message) = core::str::from_utf8(&buf[..len]) {
+                            message
+                        } else {
+                            "(unable to decode utf-8)"
+                        };
+                        error!(
+                            "UART deserialise bytes error {}: {}",
+                            Debug2Format(&e),
+                            message
+                        )
                     } else {
                         info!("Config updated from UART")
                     };
@@ -52,8 +61,8 @@ pub async fn uart_task(uart: Uart<'static, USART3, DMA1_CH2, DMA1_CH3>) {
 pub struct MqttFormat {
     soc: f32,
     volts: f32,
-    cell_mv_high: f32,
-    cell_mv_low: f32,
+    cell_mv_high: u16,
+    cell_mv_low: u16,
     cell_temp_high: f32,
     cell_temp_low: f32,
     // #[serde(with = "BigArray")]
@@ -75,8 +84,8 @@ impl MqttFormat {
         Self {
             soc: 0.0,
             volts: 0.0,
-            cell_mv_high: 0.0,
-            cell_mv_low: 0.0,
+            cell_mv_high: 0,
+            cell_mv_low: 0,
             cell_temp_high: 0.0,
             cell_temp_low: 0.0,
             // cells_millivolts: [0; 96],
@@ -89,20 +98,20 @@ impl MqttFormat {
             valid: false,
         }
     }
-    pub fn update(&mut self, bmsdata: kangoo_battery::Bms) {
-        self.soc = bmsdata.soc as f32;
-        self.volts = (bmsdata.pack_volts as f32) * 0.1;
-        self.cell_mv_high = bmsdata.max_volts as f32;
-        self.cell_mv_low = bmsdata.min_volts as f32;
-        self.cell_temp_high = (bmsdata.temp_max as f32) * 0.1;
-        self.cell_temp_low = (bmsdata.temp_min as f32) * 0.1;
+    pub fn update(&mut self, bmsdata: bms_standard::Bms) {
+        self.soc = bmsdata.soc;
+        self.volts = bmsdata.pack_volts;
+        self.cell_mv_high = *bmsdata.cell_range_mv.maximum();
+        self.cell_mv_low = *bmsdata.cell_range_mv.minimum();
+        self.cell_temp_high = *bmsdata.temps.maximum();
+        self.cell_temp_low = *bmsdata.temps.minimum();
         // self.cells_millivolts = bmsdata.cells;
         // self.cell_balance = bmsdata.bal_cells;
-        self.amps = (bmsdata.current as f32) * 0.1;
-        self.kwh = (bmsdata.kwh_remaining as f32) * 0.1;
-        self.charge = (bmsdata.charge_max as f32) * 0.1;
-        self.discharge = (bmsdata.discharge_max as f32) * 0.1;
-        self.bal = bmsdata.balancing_cells;
+        self.amps = bmsdata.current;
+        self.kwh = bmsdata.kwh_remaining;
+        self.charge = bmsdata.charge_max;
+        self.discharge = bmsdata.discharge_max;
+        self.bal = bmsdata.get_balancing_cells();
         self.valid = bmsdata.valid;
     }
     fn device_update_msg(&self) -> String {
