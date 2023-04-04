@@ -14,6 +14,7 @@ pub type BmsChannelTx = Channel<_Mutex, Frame, 20>;
 pub type Elapsed = Mutex<_Mutex, Option<Instant>>;
 pub type MqttFmtMutex = embassy_sync::mutex::Mutex<_Mutex, MqttFormat>;
 pub type ConfigType = embassy_sync::mutex::Mutex<_Mutex, Config>;
+pub type PreambleType = embassy_sync::mutex::Mutex<_Mutex, bool>;
 pub type Status = Signal<_Mutex, bool>;
 
 #[cfg(feature = "solax")]

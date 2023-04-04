@@ -8,6 +8,7 @@ use embassy_stm32::can::bxcan::Frame;
 pub async fn bms_tx_periodic() {
     use embassy_futures::select::{select3, Either3};
     use embassy_time::{Duration, Ticker};
+    use heapless::Vec as hVec;
     use kangoo_battery::*;
     let tx = BMS_CHANNEL_TX.sender();
     let ticker_ms = |ms| Ticker::every(Duration::from_millis(ms));
@@ -16,17 +17,70 @@ pub async fn bms_tx_periodic() {
             error!("Periodic queue buf error")
         };
     };
+
+    use embedded_hal::can::{Frame as _, Id, StandardId};
+    let request_init_preamble = |bit0: u8, bit1: u8, bit2: u8| -> Frame {
+        embassy_stm32::can::bxcan::Frame::new(
+            Id::Standard(StandardId::new(0x423).unwrap()),
+            &[bit0, 0x00, 0xFF, 0xFF, bit1, 0xE0, bit2, 0x00],
+        )
+        .unwrap()
+    };
+    let request_init_preamble2 = |id: u16| -> Frame {
+        embassy_stm32::can::bxcan::Frame::new(
+            Id::Standard(StandardId::new(id).unwrap()),
+            &[0x20, 0xE4, 0x03, 0xB1, 0x2F, 0x00, 0x01, 0x4E],
+        )
+        .unwrap()
+    };
+    let request_init_preamble3 = |id: u16| {
+        embassy_stm32::can::bxcan::Frame::new(
+            Id::Standard(StandardId::new(id).unwrap()),
+            &[0x00, 0x18, 0x02, 0x00, 0x79, 0x18, 0x00],
+        )
+        .unwrap()
+    };
+    let request_init_preamble4 = |id: u16| {
+        embassy_stm32::can::bxcan::Frame::new(
+            Id::Standard(StandardId::new(id).unwrap()),
+            &[0x00, 0x00, 0x00],
+        )
+        .unwrap()
+    };
+
     warn!("Starting BMS TX periodic");
     let mut t1 = ticker_ms(100);
     let mut t2 = ticker_ms(5050);
     let mut t3 = ticker_ms(11025);
+
     loop {
-        let frame: Frame = match select3(t1.next(), t2.next(), t3.next()).await {
-            Either3::First(_) => request_init().unwrap(),
-            Either3::Second(_) => request_tx_frame(RequestMode::CellBank1).unwrap(),
-            Either3::Third(_) => request_tx_frame(RequestMode::Balance).unwrap(),
+        let mut frames: hVec<Frame, 4> = hVec::new();
+        let frames: hVec<Frame, 4> = match select3(t1.next(), t2.next(), t3.next()).await {
+            // Either3::First(_) => request_init().unwrap(),
+            Either3::First(_) => {
+                let frame = if *PREAMBLE.lock().await {
+                    request_init_preamble(0x03, 0x5d, 0x5d)
+                } else {
+                    request_init_preamble(0x03, 0xb2, 0xb2)
+                };
+                let _ = frames.push(frame);
+                let _ = frames.push(request_init_preamble2(0x597));
+                let _ = frames.push(request_init_preamble3(0x426));
+                let _ = frames.push(request_init_preamble4(0x627));
+                frames
+            }
+            Either3::Second(_) => {
+                let _ = frames.push(request_tx_frame(RequestMode::CellBank1).unwrap());
+                frames
+            }
+            Either3::Third(_) => {
+                let _ = frames.push(request_tx_frame(RequestMode::Balance).unwrap());
+                frames
+            }
         };
-        sender(frame);
+        for frame in frames {
+            sender(frame)
+        }
     }
 }
 
@@ -56,6 +110,20 @@ pub async fn bms_rx() {
             Some(id) => id,
             None => continue,
         };
+        if id == 0x445 {
+            let mut x = PREAMBLE.lock().await;
+            *x = match frame.data().unwrap()[2] {
+                0x55 => false,
+                _ => true,
+            }
+        }
+        if id == 0x424 {
+            let mut x = PREAMBLE.lock().await;
+            *x = match frame.data().unwrap()[6] {
+                0x55 => false,
+                _ => true,
+            }
+        }
         if ![0x155, 0x424, 0x425, 0x4ae, 0x7bb].contains(&id) {
             continue; // filter unwanted frames
         }
