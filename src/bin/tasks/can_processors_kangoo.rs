@@ -128,7 +128,6 @@ pub async fn bms_rx() {
                 *LAST_BMS_MESSAGE.lock().await = Some(Instant::now());
                 let mut bmsdata = BMS.lock().await;
                 let mut c = || {
-                    bmsdata.cell_mv = data.cells_mv;
                     bmsdata.cell_range_mv = data.cell_mv;
                     bmsdata.pack_volts = data.pack_volts;
                     bmsdata.kwh_remaining = data.kwh_remaining;
@@ -140,7 +139,7 @@ pub async fn bms_rx() {
                     );
                     bmsdata.charge_max = data.max_charge_amps as f32;
                     defmt::debug!(
-                        "{}A {}% {}kWh {}maxA {}ptemp",
+                        "Current: {}A SoC: {}% Remaining: {}kWh Charge Rate: {}maxA Pack: {}ºC",
                         data.current_value,
                         data.soc_value,
                         data.kwh_remaining,
@@ -148,7 +147,7 @@ pub async fn bms_rx() {
                         data.pack_temp
                     );
                     bmsdata
-                        .set_valid(true)?
+                        .set_valid(false)?
                         .update_current(data.current_value)?
                         .update_soc(data.soc_value)?
                         .update_kwh(data.kwh_remaining)?
@@ -174,21 +173,22 @@ pub async fn bms_rx() {
 
                     let mut bmsdata = BMS.lock().await;
                     let mut c = || {
+                        bmsdata.cell_mv = data.cells_mv;
                         bmsdata.bal_cells = data.bal_cells;
 
                         defmt::debug!(
-                            "cells: {} {} {}pvolts temp: {} {}",
+                            "Cell Range H/L: {}mV {}mV Pack Volts: {}V Temperatures H/L: {}ºC {}ºC",
                             data.cell_mv.maximum(),
                             data.cell_mv.minimum(),
                             data.pack_volts,
+                            data.temp.maximum(),
                             data.temp.minimum(),
-                            data.temp.maximum()
                         );
                         bmsdata.cell_range_mv = data.cell_mv;
                         bmsdata.pack_volts = data.pack_volts;
                         // bmsdata.temps = data.temp;
                         bmsdata
-                            .set_valid(true)?
+                            .set_valid(false)?
                             .set_cell_mv_low_high(*data.cell_mv.minimum(), *data.cell_mv.maximum())?
                             .update_pack_volts(data.pack_volts)?
                             .set_temps(*data.temp.minimum(), *data.temp.maximum())?

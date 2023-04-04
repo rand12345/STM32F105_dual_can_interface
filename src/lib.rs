@@ -2,10 +2,7 @@
 #![no_std]
 
 use defmt_rtt as _; // global logger
-
-// TODO(5) adjust HAL import
 use embassy_stm32 as _; // memory layout
-
 use panic_probe as _;
 
 // same panicking *behavior* as `panic-probe` but doesn't print a panic message
@@ -22,10 +19,6 @@ pub fn exit() -> ! {
     }
 }
 
-// defmt-test 0.3.0 has the limitation that this `#[tests]` attribute can only be used
-// once within a crate. the module can be in any file but there can only be at most
-// one `#[tests]` module in this library crate
-
 #[defmt_test::tests]
 #[cfg(test)]
 mod unit_tests {
@@ -33,7 +26,7 @@ mod unit_tests {
     use defmt::assert;
     use defmt::assert_eq;
     use embassy_stm32::can::bxcan;
-    use embedded_hal::can::{ExtendedId, Frame, Id, Id::Extended, Id::Standard, StandardId};
+    use embedded_hal::can::{ExtendedId, Frame, Id, StandardId};
     use solax_can_bus::SolaxBms;
 
     const BALDATA8: [[u8; 8]; 3] = [
@@ -105,20 +98,19 @@ mod unit_tests {
         let inverter_frame = |id: u32, payload: &[u8; 8]| {
             bxcan::Frame::new(Id::Extended(ExtendedId::new(id).unwrap()), payload).unwrap()
         };
-        {
-            bms.soc = 42.1;
-            bms.charge_max = 50.0;
-            bms.discharge_max = 35.0;
-            bms.current = 1.0;
-            bms.cell_range_mv = MinMax::new(4000, 4100);
-            bms.temps = MinMax::new(22.0, 23.0);
-            bms.pack_volts = 375.5;
-            bms.kwh_remaining = 12.5;
-            bms.temp = 22.5;
-            bms.set_valid(true).unwrap();
-        }
         let request = inverter_frame(0x1871, &[1, 0, 1, 0, 0, 0, 0, 0]);
-        solax.set_valid();
+
+        bms.soc = 42.1;
+        bms.charge_max = 50.0;
+        bms.discharge_max = 35.0;
+        bms.current = 1.0;
+        bms.cell_range_mv = MinMax::new(4000, 4100);
+        bms.temps = MinMax::new(22.0, 23.0);
+        bms.pack_volts = 375.5;
+        bms.kwh_remaining = 12.5;
+        bms.temp = 22.5;
+        bms.set_valid(true).unwrap();
+
         let response = solax.parser(request.clone(), &bms, true);
         match response {
             Ok(frames) => {
@@ -134,7 +126,7 @@ mod unit_tests {
             }
             Err(e) => panic!("{:?}", e),
         };
-        solax.set_valid();
+
         let response = solax.parser(request, &bms, true);
         match response {
             Ok(frames) => {
@@ -333,13 +325,23 @@ mod unit_tests {
         assert_eq!(20, *data.temp.maximum());
 
         assert!(bms.set_valid(false).is_ok());
+        assert!(!bms.valid);
+        assert!(bms.set_valid(true).is_ok());
+        assert!(bms.valid);
         assert!(bms.update_pack_volts(data.pack_volts).is_ok());
+        assert_eq!(bms.pack_volts, 363.77);
         assert!(bms.set_cell_mv(data.cells_mv).is_ok());
         assert!(bms
             .set_temps(*data.temp.minimum(), *data.temp.maximum())
             .is_ok());
         assert!(bms.throttle_pack().is_ok());
-        assert!(bms.set_valid(true).is_ok());
         assert_eq!(bms.soc, 65 as f32);
+        assert_eq!(bms.pack_volts, 363.77);
+        assert_eq!(*bms.cell_range_mv.minimum(), 3771);
+        assert_eq!(*bms.cell_range_mv.maximum(), 3797);
+        assert_eq!(bms.charge_max, 46.0);
+        assert_eq!(bms.current, -1.25);
+        assert_eq!(bms.kwh_remaining, 22.0);
+        assert_eq!(bms.temp, 17.0);
     }
 }

@@ -1,7 +1,7 @@
 use crate::config::Config;
 use crate::tasks::mqtt::MqttFormat;
 use embassy_stm32::can::bxcan::Frame;
-use embassy_sync::blocking_mutex::raw::ThreadModeRawMutex as _Mutex;
+use embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex as _Mutex;
 use embassy_sync::channel::Channel;
 use embassy_sync::mutex::Mutex;
 use embassy_sync::signal::Signal;
