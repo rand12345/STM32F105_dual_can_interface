@@ -1,7 +1,7 @@
 #![no_std]
 #![no_main]
 #![feature(type_alias_impl_trait)]
-#![feature(async_closure)]
+// #![feature(async_closure)]
 #![feature(error_in_core)]
 
 use defmt::debug;

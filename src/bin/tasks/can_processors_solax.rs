@@ -41,7 +41,7 @@ pub async fn inverter_rx() -> ! {
         let response = {
             let mut solax = INVERTER_DATA.lock().await;
             let bms = BMS.lock().await;
-            info!("BMS data: {:#}", *bms);
+            // info!("BMS data: {:#}", *bms);
             solax.parser(frame, &bms, true) // add missing options
         };
 
@@ -64,6 +64,13 @@ pub async fn inverter_rx() -> ! {
                     BadId(id) => {
                         error!("Critical: unexpected frame in inverter can data {:02x}", id);
                         false // disable contactor
+                    }
+                    TimeStamp(time) => {
+                        info!(
+                            "Timestamp: 20{}/{}/{} {}:{}:{}",
+                            time[0], time[1], time[2], time[3], time[4], time[5]
+                        );
+                        true
                     }
                     x => {
                         warn!("{}", x);

@@ -21,8 +21,9 @@ lazy_static! {
     pub static ref MQTTFMT: MqttFmtMutex = embassy_sync::mutex::Mutex::new(MqttFormat::default());
     pub static ref CONFIG: ConfigType = embassy_sync::mutex::Mutex::new(Config::default());
     pub static ref PREAMBLE: PreambleType = embassy_sync::mutex::Mutex::new(false);
+
     pub static ref BMS: BmsType =
-        embassy_sync::mutex::Mutex::new(bms_standard::Bms::new(bms_standard::Config::default()));
+        embassy_sync::mutex::Mutex::new(bms_standard::Bms::new(bms_standard::Config::default().set_discharge_limts(0.0, 35.0).unwrap()));
 }
 
 #[cfg(feature = "solax")]

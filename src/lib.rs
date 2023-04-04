@@ -32,13 +32,19 @@ mod unit_tests {
     use bms_standard::*;
     use defmt::assert;
     use defmt::assert_eq;
+    use embassy_stm32::can::bxcan;
     use embedded_hal::can::{ExtendedId, Frame, Id, Id::Extended, Id::Standard, StandardId};
     use solax_can_bus::SolaxBms;
 
-    const BALDATA: [[u8; 8]; 3] = [
+    const BALDATA8: [[u8; 8]; 3] = [
         [0x10, 0x0E, 0x61, 0x07, 0x00, 0x00, 0x00, 0x00],
         [0x21, 0xFF, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00],
         [0x22, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00],
+    ];
+    const BALDATA96: [[u8; 8]; 3] = [
+        [0x10, 0x0E, 0x61, 0x07, 0xFF, 0xFF, 0xFF, 0xFF],
+        [0x21, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF],
+        [0x22, 0xFF, 0xFF, 0x00, 0x00, 0x00, 0x00, 0x00],
     ];
 
     const CELL1DATA: [[u8; 8]; 19] = [
@@ -189,8 +195,9 @@ mod unit_tests {
     use kangoo_battery::{BMSStatus, Data, RequestMode};
 
     #[test]
-    fn test_rapid_can_data() {
+    fn test_kangoo_rapid_can_data() {
         let mut data = Data::new();
+        let mut bms = Bms::new(Config::default());
         let r1 = data.rapid_data_processor::<bxcan::Frame>(
             Frame::new(
                 Id::Standard(StandardId::new(0x155).unwrap()),
@@ -231,11 +238,17 @@ mod unit_tests {
         assert_eq!(data.kwh_remaining, 22.0);
         assert_eq!(data.pack_volts, 0.0);
         assert_eq!(data.pack_temp, 17.0);
-        assert!(data.mode == BMSStatus::BMSReady)
-    }
+        assert!(data.mode == BMSStatus::BMSReady);
 
-    #[test]
-    fn test_diag_balance_can_data() {
+        // test bms update
+        assert!(bms.set_valid(false).is_ok());
+        assert!(bms.update_current(data.current_value).is_ok());
+        assert!(bms.update_soc(data.soc_value).is_ok());
+        assert!(bms.update_kwh(data.kwh_remaining).is_ok());
+        assert!(bms.update_max_charge_amps(data.max_charge_amps).is_ok());
+        assert!(bms.set_pack_temp(data.pack_temp).is_ok());
+        assert!(bms.set_valid(true).is_ok());
+
         let rframe = bxcan::Frame::new(
             embedded_hal::can::Id::Standard(embedded_hal::can::StandardId::new(0x79b).unwrap()),
             &[0x30, 0x01, 0x64, 0x00, 0x00, 0x00, 0x00, 0x00],
@@ -243,6 +256,10 @@ mod unit_tests {
         let temp_request_frame = bxcan::Frame::new(
             embedded_hal::can::Id::Standard(embedded_hal::can::StandardId::new(0x79b).unwrap()),
             &[2, 33, 4, 0, 0, 0, 0, 0],
+        );
+        let bal_request_frame = bxcan::Frame::new(
+            embedded_hal::can::Id::Standard(embedded_hal::can::StandardId::new(0x79b).unwrap()),
+            &[2, 33, 7, 0, 0, 0, 0, 0],
         );
 
         let x7bb = |data: &[u8; 8]| {
@@ -253,42 +270,13 @@ mod unit_tests {
             .unwrap()
         };
 
-        let mut data = Data::new();
-        for payload in BALDATA.iter() {
-            let r = data
-                .diag_data_processor::<bxcan::Frame>(x7bb(&payload))
-                .unwrap();
-            if payload != BALDATA.last().unwrap() {
-                assert_eq!(r, rframe)
-            } else {
-                assert_eq!(r, temp_request_frame)
-            }
-            assert_eq!(data.req_mode, RequestMode::Balance)
-        }
-        assert_eq!(8, data.get_balance_cells())
-    }
-
-    #[test]
-    fn test_diag_cellvolts_can_data() {
-        let mut data = Data::new();
-        let rframe = bxcan::Frame::new(
-            embedded_hal::can::Id::Standard(embedded_hal::can::StandardId::new(0x79b).unwrap()),
-            &[0x30, 0x01, 0x64, 0x00, 0x00, 0x00, 0x00, 0x00],
-        );
         let cellbank2_request = bxcan::Frame::new(
             embedded_hal::can::Id::Standard(embedded_hal::can::StandardId::new(0x79b).unwrap()),
             &[0x02, 0x21, 0x42, 0x00, 0x00, 0x00, 0x00, 0x00],
         );
 
-        let x7bb = |data: &[u8; 8]| {
-            bxcan::Frame::new(
-                embedded_hal::can::Id::Standard(embedded_hal::can::StandardId::new(0x7bb).unwrap()),
-                data,
-            )
-        };
-
         for payload in CELL1DATA.iter() {
-            let r = data.diag_data_processor::<bxcan::Frame>(x7bb(&payload).unwrap());
+            let r = data.diag_data_processor::<bxcan::Frame>(x7bb(&payload));
             if payload != CELL1DATA.last().unwrap() {
                 assert_eq!(rframe, r.unwrap());
             } else {
@@ -299,36 +287,37 @@ mod unit_tests {
         }
 
         for payload in CELL2DATA.iter() {
-            let r = data.diag_data_processor::<bxcan::Frame>(x7bb(&payload).unwrap());
+            let r = data.diag_data_processor::<bxcan::Frame>(x7bb(&payload));
             if payload != CELL2DATA.last().unwrap() {
                 assert_eq!(rframe, r.unwrap());
             } else {
-                assert_eq!(None, r.unwrap())
+                assert_eq!(bal_request_frame, r.unwrap())
             }
             assert_eq!(data.req_mode, RequestMode::CellBank2)
         }
         assert_eq!(data.pack_volts, 363.77);
         assert_eq!(*data.cell_mv.minimum(), 3771);
         assert_eq!(*data.cell_mv.maximum(), 3797);
-    }
 
-    #[test]
-    fn test_diag_cell_temps_can_data() {
-        let mut data = Data::new();
-        let rframe = bxcan::Frame::new(
-            embedded_hal::can::Id::Standard(embedded_hal::can::StandardId::new(0x79b).unwrap()),
-            &[0x30, 0x01, 0x64, 0x00, 0x00, 0x00, 0x00, 0x00],
-        );
-
-        let x7bb = |data: &[u8; 8]| {
-            bxcan::Frame::new(
-                embedded_hal::can::Id::Standard(embedded_hal::can::StandardId::new(0x7bb).unwrap()),
-                data,
-            )
-        };
+        [(BALDATA8, 8), (BALDATA96, 96)]
+            .into_iter()
+            .for_each(|(baldata, bal)| {
+                for payload in baldata.iter() {
+                    let r = data
+                        .diag_data_processor::<bxcan::Frame>(x7bb(&payload))
+                        .unwrap();
+                    if payload != baldata.last().unwrap() {
+                        assert_eq!(r, rframe)
+                    } else {
+                        assert_eq!(r, temp_request_frame)
+                    }
+                    assert_eq!(data.req_mode, RequestMode::Balance)
+                }
+                assert_eq!(bal, data.get_balance_cells());
+            });
 
         for payload in TEMPDATA.iter() {
-            let r = data.diag_data_processor::<bxcan::Frame>(x7bb(&payload).unwrap());
+            let r = data.diag_data_processor::<bxcan::Frame>(x7bb(&payload));
             if payload != TEMPDATA.last().unwrap() {
                 assert_eq!(rframe, r.unwrap());
             } else {
@@ -342,5 +331,15 @@ mod unit_tests {
         );
         assert_eq!(16, *data.temp.minimum());
         assert_eq!(20, *data.temp.maximum());
+
+        assert!(bms.set_valid(false).is_ok());
+        assert!(bms.update_pack_volts(data.pack_volts).is_ok());
+        assert!(bms.set_cell_mv(data.cells_mv).is_ok());
+        assert!(bms
+            .set_temps(*data.temp.minimum(), *data.temp.maximum())
+            .is_ok());
+        assert!(bms.throttle_pack().is_ok());
+        assert!(bms.set_valid(true).is_ok());
+        assert_eq!(bms.soc, 65 as f32);
     }
 }

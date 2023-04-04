@@ -8,13 +8,12 @@ use embassy_stm32::can::bxcan::Frame;
 pub async fn bms_tx_periodic() {
     use embassy_futures::select::{select3, Either3};
     use embassy_time::{Duration, Ticker};
-    use heapless::Vec as hVec;
     use kangoo_battery::*;
     let tx = BMS_CHANNEL_TX.sender();
     let ticker_ms = |ms| Ticker::every(Duration::from_millis(ms));
     let sender = |frame| {
         if let Err(_e) = tx.try_send(frame) {
-            error!("Periodic queue buf error")
+            error!("BMS: Periodic queue buf error")
         };
     };
 
@@ -54,8 +53,7 @@ pub async fn bms_tx_periodic() {
     let mut t3 = ticker_ms(11025);
 
     loop {
-        let mut frames: hVec<Frame, 4> = hVec::new();
-        let frames: hVec<Frame, 4> = match select3(t1.next(), t2.next(), t3.next()).await {
+        match select3(t1.next(), t2.next(), t3.next()).await {
             // Either3::First(_) => request_init().unwrap(),
             Either3::First(_) => {
                 let frame = if *PREAMBLE.lock().await {
@@ -63,24 +61,14 @@ pub async fn bms_tx_periodic() {
                 } else {
                     request_init_preamble(0x03, 0xb2, 0xb2)
                 };
-                let _ = frames.push(frame);
-                let _ = frames.push(request_init_preamble2(0x597));
-                let _ = frames.push(request_init_preamble3(0x426));
-                let _ = frames.push(request_init_preamble4(0x627));
-                frames
+                sender(frame);
+                sender(request_init_preamble2(0x597));
+                sender(request_init_preamble3(0x426));
+                sender(request_init_preamble4(0x627));
             }
-            Either3::Second(_) => {
-                let _ = frames.push(request_tx_frame(RequestMode::CellBank1).unwrap());
-                frames
-            }
-            Either3::Third(_) => {
-                let _ = frames.push(request_tx_frame(RequestMode::Balance).unwrap());
-                frames
-            }
+            Either3::Second(_) => sender(request_tx_frame(RequestMode::CellBank1).unwrap()),
+            Either3::Third(_) => sender(request_tx_frame(RequestMode::Balance).unwrap()),
         };
-        for frame in frames {
-            sender(frame)
-        }
     }
 }
 
@@ -88,7 +76,6 @@ pub async fn bms_tx_periodic() {
 #[cfg(feature = "kangoo")]
 #[embassy_executor::task]
 pub async fn bms_rx() {
-    use bms_standard::MinMax;
     use embassy_stm32::can::bxcan::Id;
     use embassy_stm32::can::bxcan::Id::Standard;
     use embassy_time::Instant;
@@ -110,14 +97,15 @@ pub async fn bms_rx() {
             Some(id) => id,
             None => continue,
         };
+
+        // testing
         if id == 0x445 {
             let mut x = PREAMBLE.lock().await;
             *x = match frame.data().unwrap()[2] {
                 0x55 => false,
                 _ => true,
             }
-        }
-        if id == 0x424 {
+        } else if id == 0x424 {
             let mut x = PREAMBLE.lock().await;
             *x = match frame.data().unwrap()[6] {
                 0x55 => false,
@@ -136,35 +124,42 @@ pub async fn bms_rx() {
                 }
             };
             if update_inverter {
-                {
-                    // change to BMS wdt and signal update
-                    *LAST_BMS_MESSAGE.lock().await = Some(Instant::now());
-                }
-                let c = async || {
-                    // remove async, not bubbling errors
-                    let mut bmsdata = BMS.lock().await;
+                // change to BMS wdt and signal update
+                *LAST_BMS_MESSAGE.lock().await = Some(Instant::now());
+                let mut bmsdata = BMS.lock().await;
+                let mut c = || {
                     bmsdata.cell_mv = data.cells_mv;
                     bmsdata.cell_range_mv = data.cell_mv;
                     bmsdata.pack_volts = data.pack_volts;
                     bmsdata.kwh_remaining = data.kwh_remaining;
                     bmsdata.soc = data.soc_value as f32;
                     bmsdata.temp = data.pack_temp;
-                    bmsdata.temps =
-                        MinMax::new(*data.temp.minimum() as f32, *data.temp.maximum() as f32);
+                    bmsdata.temps = bms_standard::MinMax::new(
+                        *data.temp.minimum() as f32,
+                        *data.temp.maximum() as f32,
+                    );
+                    bmsdata.charge_max = data.max_charge_amps as f32;
+                    defmt::debug!(
+                        "{}A {}% {}kWh {}maxA {}ptemp",
+                        data.current_value,
+                        data.soc_value,
+                        data.kwh_remaining,
+                        data.max_charge_amps,
+                        data.pack_temp
+                    );
                     bmsdata
                         .set_valid(true)?
                         .update_current(data.current_value)?
                         .update_soc(data.soc_value)?
                         .update_kwh(data.kwh_remaining)?
                         .update_max_charge_amps(data.max_charge_amps)?
-                        .update_pack_volts(data.pack_volts)?
                         .set_pack_temp(data.pack_temp)?
-                        .throttle_pack()
+                        .throttle_pack()?
+                        .set_valid(true)
                 };
-                match c().await {
+                match c() {
                     Ok(bms) => {
                         push_all_to_mqtt(bms).await;
-                        update_dod(bms).await;
                     }
                     Err(e) => error!("Rapid data update error: {}", e),
                 };
@@ -176,17 +171,31 @@ pub async fn bms_rx() {
                     {
                         *LAST_BMS_MESSAGE.lock().await = Some(Instant::now());
                     }
-                    let c = async || {
-                        let mut bmsdata = BMS.lock().await;
+
+                    let mut bmsdata = BMS.lock().await;
+                    let mut c = || {
                         bmsdata.bal_cells = data.bal_cells;
+
+                        defmt::debug!(
+                            "cells: {} {} {}pvolts temp: {} {}",
+                            data.cell_mv.maximum(),
+                            data.cell_mv.minimum(),
+                            data.pack_volts,
+                            data.temp.minimum(),
+                            data.temp.maximum()
+                        );
+                        bmsdata.cell_range_mv = data.cell_mv;
+                        bmsdata.pack_volts = data.pack_volts;
+                        // bmsdata.temps = data.temp;
                         bmsdata
                             .set_valid(true)?
                             .set_cell_mv_low_high(*data.cell_mv.minimum(), *data.cell_mv.maximum())?
                             .update_pack_volts(data.pack_volts)?
                             .set_temps(*data.temp.minimum(), *data.temp.maximum())?
-                            .throttle_pack()
+                            .throttle_pack()?
+                            .set_valid(true)
                     };
-                    match c().await {
+                    match c() {
                         Ok(bms) => {
                             push_all_to_mqtt(bms).await;
                             update_dod(bms).await;
