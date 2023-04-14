@@ -15,15 +15,3 @@ pub type Elapsed = Mutex<_Mutex, Instant>;
 pub type MqttFmtMutex = embassy_sync::mutex::Mutex<_Mutex, MqttFormat>;
 pub type ConfigType = embassy_sync::mutex::Mutex<_Mutex, Config>;
 pub type Status = Signal<_Mutex, bool>;
-
-#[cfg(feature = "solax")]
-pub type InverterDataMutex = embassy_sync::mutex::Mutex<_Mutex, solax_can_bus::SolaxBms>;
-#[cfg(feature = "pylontech")]
-pub type InverterDataMutex = embassy_sync::mutex::Mutex<_Mutex, pylontech_protocol::PylontechBms>;
-// #[cfg(feature = "byd")]
-// pub type InverterDataMutex =
-//     embassy_sync::mutex::Mutex<_Mutex, crate::tasks::can_processors_byd::Bms>;
-
-#[cfg(feature = "ze50")]
-pub type Ze50DataMutex = embassy_sync::mutex::Mutex<_Mutex, renault_zoe_ph2_battery::Data>;
-pub type Ze50BmsMutex = embassy_sync::mutex::Mutex<_Mutex, renault_zoe_ph2_battery::bms::Bms>;

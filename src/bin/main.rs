@@ -1,9 +1,6 @@
 #![no_std]
 #![no_main]
 #![feature(type_alias_impl_trait)]
-// #![feature(alloc_error_handler)]
-// #![feature(generators)]
-// #![feature(async_closure)]
 #![feature(error_in_core)]
 
 use defmt::debug;
@@ -64,30 +61,12 @@ async fn main(spawner: Spawner) {
     defmt::unwrap!(spawner.spawn(crate::tasks::contactor_task(p.PA15, p.TIM2)));
     defmt::unwrap!(spawner.spawn(crate::tasks::mqtt::uart_task(uart)));
 
-    #[cfg(feature = "kangoo")]
-    use crate::tasks::can_processors_kangoo::*;
-    #[cfg(feature = "ze50")]
-    use crate::tasks::can_processors_ze50::*;
-
-    #[cfg(feature = "solax")]
-    use crate::tasks::can_processors_solax::*;
-
-    #[cfg(feature = "pylontech")]
-    use crate::tasks::can_processors_pylontech::*;
-
-    #[cfg(feature = "byd")]
-    use crate::tasks::can_processors_byd::*;
-
-    defmt::unwrap!(spawner.spawn(bms_rx()));
-
-    defmt::unwrap!(spawner.spawn(inverter_rx()));  // switched off whilst debugging BMS
-
-    defmt::unwrap!(spawner.spawn(bms_tx_periodic()));
+    defmt::unwrap!(spawner.spawn(crate::tasks::process::parse())); // switched off whilst debugging BMS
 
     // // always start can 1 first
 
-    defmt::unwrap!(spawner.spawn(crate::tasks::can_interfaces::bms_task(can1)));
-    defmt::unwrap!(spawner.spawn(crate::tasks::can_interfaces::inverter_task(can2)));
+    defmt::unwrap!(spawner.spawn(crate::tasks::can_interfaces::can1_task(can1)));
+    defmt::unwrap!(spawner.spawn(crate::tasks::can_interfaces::can2_task(can2)));
 
     // defmt::unwrap!(spawner.spawn(crate::wdt::init(p.IWDG, 10000000))); // 10 seconds WDT OFF WHILST TESTING
     // defmt::unwrap!(spawner.spawn(crate::async_tasks::one_sec_periodic())); // e_t::Timer test

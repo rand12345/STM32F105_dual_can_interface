@@ -4,21 +4,7 @@ use embassy_stm32::peripherals::{PA15, PC12, TIM2};
 use crate::statics::CONTACTOR_STATE;
 
 pub mod can_interfaces;
-
-#[cfg(feature = "kangoo")]
-pub mod can_processors_kangoo;
-
-#[cfg(feature = "ze50")]
-pub mod can_processors_ze50;
-
-#[cfg(feature = "pylontech")]
-pub mod can_processors_pylontech;
-
-#[cfg(feature = "byd")]
-pub mod can_processors_byd;
-
-#[cfg(feature = "solax")]
-pub mod can_processors_solax;
+pub mod process;
 
 pub mod mqtt;
 

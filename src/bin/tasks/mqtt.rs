@@ -50,24 +50,18 @@ pub async fn uart_task(uart: Uart<'static, USART3, DMA1_CH2, DMA1_CH3>) {
 
 #[derive(Clone, Copy, Serialize)]
 pub struct MqttFormat {
-    soc: f32,
-    volts: f32,
-    cell_mv_high: f32,
-    cell_mv_low: f32,
-    cell_temp_high: f32,
-    cell_temp_low: f32,
-    // #[serde(with = "BigArray")]
-    // #[serde(skip)]
-    // cells_millivolts: [u16; 96],
-    // #[serde(skip)]
-    // #[serde(with = "BigArray")]
-    // cell_balance: [bool; 96],
-    amps: f32,
-    kwh: f32,
-    charge: f32,
-    discharge: f32,
-    bal: u8,
-    valid: bool,
+    pub soc: f32,
+    pub volts: f32,
+    pub cell_mv_high: f32,
+    pub cell_mv_low: f32,
+    pub cell_temp_high: f32,
+    pub cell_temp_low: f32,
+    pub amps: f32,
+    pub kwh: f32,
+    pub charge: f32,
+    pub discharge: f32,
+    pub bal: u8,
+    pub valid: bool,
 }
 
 impl MqttFormat {
@@ -89,22 +83,7 @@ impl MqttFormat {
             valid: false,
         }
     }
-    pub fn update(&mut self, bmsdata: kangoo_battery::Bms) {
-        self.soc = bmsdata.soc as f32;
-        self.volts = (bmsdata.pack_volts as f32) * 0.1;
-        self.cell_mv_high = bmsdata.max_volts as f32;
-        self.cell_mv_low = bmsdata.min_volts as f32;
-        self.cell_temp_high = (bmsdata.temp_max as f32) * 0.1;
-        self.cell_temp_low = (bmsdata.temp_min as f32) * 0.1;
-        // self.cells_millivolts = bmsdata.cells;
-        // self.cell_balance = bmsdata.bal_cells;
-        self.amps = (bmsdata.current as f32) * 0.1;
-        self.kwh = (bmsdata.kwh_remaining as f32) * 0.1;
-        self.charge = (bmsdata.charge_max as f32) * 0.1;
-        self.discharge = (bmsdata.discharge_max as f32) * 0.1;
-        self.bal = bmsdata.balancing_cells;
-        self.valid = bmsdata.valid;
-    }
+
     fn device_update_msg(&self) -> String {
         json::to_string(&self)
     }
