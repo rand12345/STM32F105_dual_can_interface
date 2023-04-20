@@ -32,7 +32,7 @@ async fn main(spawner: Spawner) {
     config.rcc.pclk1 = Some(mhz(24));
 
     let p = embassy_stm32::init(config);
-    debug!("Gateway test");
+    debug!("Leaf battery data test");
     unsafe {
         use embassy_stm32::pac;
         pac::RCC.apb2enr().modify(|w| w.set_afioen(true));
@@ -58,7 +58,7 @@ async fn main(spawner: Spawner) {
     let can2 = Can::new(p.CAN2, p.PB5, p.PB6);
 
     defmt::unwrap!(spawner.spawn(crate::tasks::led_task(p.PC12)));
-    defmt::unwrap!(spawner.spawn(crate::tasks::contactor_task(p.PA15, p.TIM2)));
+    // defmt::unwrap!(spawner.spawn(crate::tasks::contactor_task(p.PA15, p.TIM2)));
     defmt::unwrap!(spawner.spawn(crate::tasks::mqtt::uart_task(uart)));
 
     defmt::unwrap!(spawner.spawn(crate::tasks::process::parse())); // switched off whilst debugging BMS

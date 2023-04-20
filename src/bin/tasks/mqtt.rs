@@ -2,6 +2,7 @@ use crate::statics::*;
 use defmt::error;
 use defmt::info;
 use defmt::Debug2Format;
+use defmt::Format;
 use embassy_stm32::peripherals::*;
 use embassy_stm32::usart::Uart;
 use embassy_time::Instant;
@@ -41,14 +42,15 @@ pub async fn uart_task(uart: Uart<'static, USART3, DMA1_CH2, DMA1_CH3>) {
                 if let Err(e) = tx.write(mqtt_data.device_update_msg().as_bytes()).await {
                     error!("UART send bytes error {}", Debug2Format(&e));
                 } else {
-                    info!("MQTT sent to UART")
+                    info!("MQTT sent to UART");
+                    info!("{}", *mqtt_data)
                 };
             }
         }
     }
 }
 
-#[derive(Clone, Copy, Serialize)]
+#[derive(Clone, Copy, Serialize, Format)]
 pub struct MqttFormat {
     pub soc: f32,
     pub volts: f32,
@@ -61,7 +63,7 @@ pub struct MqttFormat {
     pub charge: f32,
     pub discharge: f32,
     pub bal: u8,
-    pub valid: bool,
+    pub acc: f32,
 }
 
 impl MqttFormat {
@@ -80,7 +82,7 @@ impl MqttFormat {
             charge: 0.0,
             discharge: 0.0,
             bal: 0,
-            valid: false,
+            acc: 0.0,
         }
     }
 
